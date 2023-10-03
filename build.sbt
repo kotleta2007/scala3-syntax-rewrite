@@ -13,6 +13,7 @@ inThisBuild(
       )
     ),
     scalaVersion := V.scala213,
+    // TODO: remove these lines when changed to SyntacticRule
     semanticdbEnabled := true,
     semanticdbIncludeInJar := true,
     semanticdbVersion := scalafixSemanticdb.revision,
