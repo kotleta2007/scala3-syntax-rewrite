@@ -3,8 +3,7 @@ package fix
 object Namedliteralarguments_v1_Test {
   val x = 4
 
-  val comparison = if x == 0 
-    then "equal" else "not equal"
+  val comparison = if x == 0 then "equal" else "not equal"
   val oneliner = if x == 1 then println(x)
 
   val loop = while x >= 0 do { println(x) }

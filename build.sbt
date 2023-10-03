@@ -9,6 +9,7 @@ inThisBuild(
         "kotleta2007",
         "Mark Tropin",
         "mark.tropin@epfl.ch",
+        url("https://epfl.ch")
       )
     ),
     scalaVersion := V.scala213,
