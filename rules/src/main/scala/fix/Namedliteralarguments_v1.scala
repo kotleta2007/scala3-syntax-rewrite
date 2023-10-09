@@ -154,12 +154,60 @@ class Namedliteralarguments_v1
 
       // Rule 1.5
       case tryCatchTree: Term.Try => 
+        // for (token <- tryCatchTree.tokens) println(token.text)
+
+        val isLeftBrace  = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.LeftBrace]
+        val isRightBrace = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.RightBrace]
+
+        val isWhitespace = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.Whitespace]
+
+        val isCatch = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.KwCatch]
+        val isCase  = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.KwCase]
+
+        val catchToken = tryCatchTree.tokens.find(t => isCatch(t)).get
+        val caseToken  = tryCatchTree.tokens.find(t => isCase(t)).get
+        
+        // should we add lazy vals when we define the patches?
+        // they will be evaluated at the end of each case
+
+        val afterCatch  = (t: Token) => t.start >= catchToken.end
+        val afterCase   = (t: Token) => t.start >= caseToken.end
+        val beforeCase  = (t: Token) => t.end <= caseToken.start
+
+        val leftBrace  = tryCatchTree.tokens.find(t => isLeftBrace(t) && afterCatch(t)).get
+        val rightBrace = tryCatchTree.tokens.find(t => isRightBrace(t) && afterCase(t)).get
+
+        val beforeRightBrace = (t: Token) => t.end <= rightBrace.start
+        val afterRightBrace  = (t: Token) => t.start >= rightBrace.end
+        val afterLeftBrace  = (t: Token) => t.start >= leftBrace.end
+
+        val whitespaceBefore = (t: Token) => isWhitespace(t) && afterLeftBrace(t) && beforeCase(t)
+        val whitespaceAfter  = (t: Token) => isWhitespace(t) && beforeRightBrace(t)
+
+        // val isEndline = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.AtEOL]
+        // val endLine = tryCatchTree.tokens.find(t => isEndline(t) && afterRightBrace(t)).get
+        
+        val removeWhitespaceBefore = Patch.removeTokens(tryCatchTree.tokens.filter(whitespaceBefore))
+        val removeWhitespaceAfter  = Patch.removeTokens(tryCatchTree.tokens.reverse.takeWhile(whitespaceAfter))
+
+        // val removeEndline = Patch.removeToken(endLine)
+
+        val removeLeftBrace = Patch.removeToken(leftBrace)
+        val removeRightBrace = Patch.removeToken(rightBrace)
+
+        // remove first curly brace, remove last curly brace, remove indentation before case
+        // between catch and }
+        /*
         if (tryCatchTree.catchp.size > 1) {
           Patch.empty
         } else {
           val newSyntax = s"try ${tryCatchTree.expr} catch ${tryCatchTree.catchp.head}"
           Patch.replaceTree(tryCatchTree, newSyntax)
         }
+        */
+        // Patch.empty
+        removeWhitespaceBefore + removeWhitespaceAfter + removeLeftBrace + removeRightBrace// + removeLeftBrace + removeRightBrace
+      
         
     }.asPatch
   }
