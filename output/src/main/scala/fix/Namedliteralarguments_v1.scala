@@ -14,6 +14,7 @@ object Namedliteralarguments_v1_Test {
 
   val tryCatch = 
     try println(x) catch case ex: Exception => println(x)
+    
   /*
   val comparison = 
     if (x < 0) {
