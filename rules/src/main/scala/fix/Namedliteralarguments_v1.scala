@@ -73,8 +73,32 @@ class Namedliteralarguments_v1
 
       // Rule 1.2
       case whileTree: Term.While => 
+        val isLeftParen = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.LeftParen]
+        val isRightParen = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.RightParen]
+
+        val (exprStart, exprEnd) = (whileTree.expr.tokens.head.start, whileTree.expr.tokens.last.end)
+        // println(exprStart, exprEnd)
+        
+        val beforeExpr = (t: Token) => t.start < exprStart
+        val afterExpr  = (t: Token) => t.start >= exprEnd
+
+        // get first opening parenthesis
+        val leftParen = whileTree.tokens.find(t => isLeftParen(t) && beforeExpr(t)).get
+        val removeLeftParen = Patch.removeToken(leftParen)
+
+        // get first closing parenthesis after expression
+        val rightParen = whileTree.tokens.find(t => isRightParen(t) && afterExpr(t)).get
+        val removeRightParen = Patch.removeToken(rightParen)
+
+        // add DO keyword
+        // can we use scala.meta.tokens.Token.KwDo ?
+        val addDo = Patch.addRight(rightParen, " do")
+
+        /*
         val newSyntax = s"while ${whileTree.expr} do ${whileTree.body}"
         Patch.replaceTree(whileTree, newSyntax)
+        */
+        removeLeftParen + removeRightParen + addDo
 
       // Rule 1.3
       case forYieldExpr: Term.ForYield => 
