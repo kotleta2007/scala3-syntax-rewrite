@@ -1,6 +1,6 @@
 package fix
 
-object Namedliteralarguments_v1_Test {
+object Rule1_Test {
   val x = 4
 
   val comparison = if x == 0 then "equal" else "not equal"

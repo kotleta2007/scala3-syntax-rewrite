@@ -3,7 +3,7 @@ rule = Rule1
  */
 package fix
 
-object Namedliteralarguments_v1_Test {
+object Rule1_Test {
   val x = 4
 
   val comparison = if (x == 0) "equal" else "not equal"
