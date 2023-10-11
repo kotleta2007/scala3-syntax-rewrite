@@ -2,26 +2,37 @@ package fix
 
 import scalafix.v1._
 import scala.meta._
+import scala.meta.tokens.Token.LeftParen
+import metaconfig.Configured
 
-class Namedliteralarguments_v1
+case class MyRuleParameters(
+  foo: Int,
+  bar: Boolean
+)
+
+object MyRuleParameters {
+  val default = MyRuleParameters(1, true)
+  implicit val surface = metaconfig.generic.deriveSurface[MyRuleParameters]
+  implicit val decoder = metaconfig.generic.deriveDecoder(MyRuleParameters(1, true))
+}
+
+class Namedliteralarguments_v1(params: MyRuleParameters)
     extends SemanticRule("Namedliteralarguments_v1") {
-
-  // override def withConfiguration(???)
   
-  // should we add lazy vals when we define the patches?
-  // they will be evaluated at the end of each case
+  def this() = this(MyRuleParameters.default)
+
+  override def withConfiguration(config: Configuration): Configured[Rule] = 
+    // config.conf.get[MyRuleParameters]("Namedliteralarguments_v1").map(new Namedliteralarguments_v1(_))
+    config.conf.getOrElse("Namedliteralarguments_v1")(this.params).map(newParams => new Namedliteralarguments_v1(newParams))
+  
 
   override def fix(implicit doc: SemanticDocument): Patch = {
+    val isLeftParen = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.LeftParen]
+    val isRightParen = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.RightParen]
+
     doc.tree.collect {
       // Rule 1.1
       case ifTree: Term.If =>
-        val isLeftParen = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.LeftParen]
-        val isRightParen = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.RightParen]
-
-        // we shouldn't do this, right?
-        val isLeftParenBad = (t: Token) => t.text == "("
-        val isRightParenBad = (t: Token) => t.text == ")"
-        
         val (condStart, condEnd) = (ifTree.cond.tokens.head.start, ifTree.cond.tokens.last.end)
         
         val beforeCond = (t: Token) => t.start < condStart
@@ -29,6 +40,7 @@ class Namedliteralarguments_v1
 
         // get first opening parenthesis
         val leftParen = ifTree.tokens.find(t => isLeftParen(t) && beforeCond(t)).get
+        ifTree.tokens.collectFirst { case t: LeftParen if t.start >= condEnd => t }
         val removeLeftParen = Patch.removeToken(leftParen)
 
         // get first closing parenthesis after condition
@@ -60,7 +72,6 @@ class Namedliteralarguments_v1
         val removeRightParen = Patch.removeToken(rightParen)
 
         // add DO keyword
-        // can we use scala.meta.tokens.Token.KwDo ?
         val addDo = Patch.addRight(rightParen, " do")
 
         removeLeftParen + removeRightParen + addDo
@@ -110,7 +121,7 @@ class Namedliteralarguments_v1
         removeLeftParen + removeRightParen + addDo
 
       // Rule 1.5
-      case tryCatchTree: Term.Try => 
+      case tryCatchTree: Term.Try if tryCatchTree.catchp.size == 1 && params.bar => 
         val isLeftBrace  = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.LeftBrace]
         val isRightBrace = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.RightBrace]
 
