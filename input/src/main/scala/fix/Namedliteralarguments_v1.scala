@@ -1,5 +1,5 @@
 /*
-rule = Namedliteralarguments_v1
+rule = Rule1
  */
 package fix
 

@@ -16,14 +16,14 @@ object MyRuleParameters {
   implicit val decoder = metaconfig.generic.deriveDecoder(MyRuleParameters(1, true))
 }
 
-class Namedliteralarguments_v1(params: MyRuleParameters)
-    extends SemanticRule("Namedliteralarguments_v1") {
+class Rule1(params: MyRuleParameters)
+    extends SemanticRule("Rule1") {
   
   def this() = this(MyRuleParameters.default)
 
   override def withConfiguration(config: Configuration): Configured[Rule] = 
     // config.conf.get[MyRuleParameters]("Namedliteralarguments_v1").map(new Namedliteralarguments_v1(_))
-    config.conf.getOrElse("Namedliteralarguments_v1")(this.params).map(newParams => new Namedliteralarguments_v1(newParams))
+    config.conf.getOrElse("Rule1")(this.params).map(newParams => new Rule1(newParams))
   
 
   override def fix(implicit doc: SemanticDocument): Patch = {
