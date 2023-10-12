@@ -10,6 +10,14 @@ object Rule1_Test {
   // rule 1.1
   val ifThenElse = if (x == 0) "equal" else "not equal"
   val ifThen = if (x == 1) println(x)
+  val ifElseIf = 
+    if (x < 0) 
+      "negative"
+    else if (x == 0) 
+      "zero"
+    else 
+      "positive"
+  val ifMixedSyntax = if (x == 0) then "equal" else "not equal"
 
   // rule 1.2
   val whileLoop = while (x >= 0) { println(x) }

@@ -34,6 +34,7 @@ class Rule1(params: Rule1Parameters)
 
     val isCatch = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.KwCatch]
     val isCase  = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.KwCase]
+    val isThen = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.KwThen]
 
     doc.tree.collect {
       // Rule 1.1
@@ -52,8 +53,14 @@ class Rule1(params: Rule1Parameters)
         val rightParen = ifTree.tokens.find(t => isRightParen(t) && isAfterCond(t)).get
         val removeRightParen = Patch.removeToken(rightParen)
 
-        // add THEN keyword
-        val addThen = Patch.addRight(rightParen, " then")
+        // add THEN keyword if necessary
+        val treeHasThen = ifTree.tokens.exists(isThen)
+        val addThen = 
+          if (treeHasThen) {
+            Patch.addRight(rightParen, " then")
+          } else {
+            Patch.empty
+          }
 
         removeLeftParen + removeRightParen + addThen
 
