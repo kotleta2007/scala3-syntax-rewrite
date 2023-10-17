@@ -10,9 +10,9 @@ case class Rule1Parameters(
 )
 
 object Rule1Parameters {
-  val default = Rule1Parameters(true)
+  val default = Rule1Parameters(false)
   implicit val surface = metaconfig.generic.deriveSurface[Rule1Parameters]
-  implicit val decoder = metaconfig.generic.deriveDecoder(Rule1Parameters(true))
+  implicit val decoder = metaconfig.generic.deriveDecoder(default)
 }
 
 class Rule1(params: Rule1Parameters)
@@ -45,24 +45,19 @@ class Rule1(params: Rule1Parameters)
         val isAfterCond  = (t: Token) => t.start >= condEnd
 
         // get first opening parenthesis
-        val leftParen = ifTree.tokens.find(t => isLeftParen(t) && isBeforeCond(t)).get
+        val leftParen = ifTree.tokens.find(t => isLeftParen(t) && isBeforeCond(t))
         // ifTree.tokens.collectFirst { case t: LeftParen if t.start >= condEnd => t }
-        val removeLeftParen = Patch.removeToken(leftParen)
+        val removeLeftParen = leftParen.map(Patch.removeToken)
 
         // get first closing parenthesis after condition
-        val rightParen = ifTree.tokens.find(t => isRightParen(t) && isAfterCond(t)).get
-        val removeRightParen = Patch.removeToken(rightParen)
+        val rightParen = ifTree.tokens.find(t => isRightParen(t) && isAfterCond(t))
+        val removeRightParen = rightParen.map(Patch.removeToken)
 
         // add THEN keyword if necessary
         val treeHasThen = ifTree.tokens.exists(isThen)
-        val addThen = 
-          if (treeHasThen) {
-            Patch.addRight(rightParen, " then")
-          } else {
-            Patch.empty
-          }
+        val addThen = Option.when(!treeHasThen)(Patch.addRight(ifTree.cond, " then"))
 
-        removeLeftParen + removeRightParen + addThen
+        Patch.empty + removeLeftParen + removeRightParen + addThen
 
       // Rule 1.2
       case whileTree: Term.While => 

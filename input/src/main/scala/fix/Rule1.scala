@@ -1,5 +1,9 @@
 /*
-rule = Rule1
+rules = [
+  Rule1
+]
+
+Rule1.useCatchInlining = true
  */
 package fix
 
