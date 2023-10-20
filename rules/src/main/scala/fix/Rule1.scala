@@ -106,23 +106,26 @@ class Rule1(params: Rule1Parameters)
 
       // Rule 1.4
       case forExpr: Term.For => 
-        val (enumsStart, enumsEnd) = (forExpr.enums.head.tokens.head.start, forExpr.enums.last.tokens.last.end)
+        val enumsStart = forExpr.enums.head.tokens.head.start
+        val enumsEnd   = forExpr.enums.last.tokens.last.end
+        val bodyBegin  = forExpr.body.children.head.tokens.head.start
         
-        val isBeforeEnums = (t: Token) => t.start < enumsStart
-        val isAfterEnums  = (t: Token) => t.start >= enumsEnd
+        def isBeforeEnums(t: Token) = t.start < enumsStart
+        def isAfterEnums(t: Token)  = t.start >= enumsEnd && t.end < bodyBegin
 
         // get first opening parenthesis
-        val leftParen = forExpr.tokens.find(t => isLeftParen(t) && isBeforeEnums(t)).get
-        val removeLeftParen = Patch.removeToken(leftParen)
+        val leftParen = forExpr.tokens.find(t => isLeftParen(t) && isBeforeEnums(t))
+        val removeLeftParen = leftParen.map(Patch.removeToken)
 
         // get first closing parenthesis after expression
-        val rightParen = forExpr.tokens.find(t => isRightParen(t) && isAfterEnums(t)).get
-        val removeRightParen = Patch.removeToken(rightParen)
+        val rightParen = forExpr.tokens.find(t => isRightParen(t) && isAfterEnums(t))
+        val removeRightParen = rightParen.map(Patch.removeToken)
         
-        // add DO keyword
-        val addDo = Patch.addRight(rightParen, " do")
+        // add DO keyword (if necessary)
+        val treeHasDo = forExpr.tokens.exists(isDo)
+        val addDo = Option.when(!treeHasDo)(Patch.addRight(forExpr.enums.last, " do"))
 
-        removeLeftParen + removeRightParen + addDo
+        Patch.empty + removeLeftParen + removeRightParen + addDo
 
       // Rule 1.5
       case tryCatchTree: Term.Try if tryCatchTree.catchp.size == 1 && params.useCatchInlining => 
