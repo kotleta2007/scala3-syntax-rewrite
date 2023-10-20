@@ -11,8 +11,8 @@ case class Rule1Parameters(
 
 object Rule1Parameters {
   val default = Rule1Parameters(false)
-  implicit val surface = metaconfig.generic.deriveSurface[Rule1Parameters]
-  implicit val decoder = metaconfig.generic.deriveDecoder(default)
+  implicit val surface: metaconfig.generic.Surface[Rule1Parameters] = metaconfig.generic.deriveSurface[Rule1Parameters]
+  implicit val decoder: metaconfig.ConfDecoder[Rule1Parameters] = metaconfig.generic.deriveDecoder(default)
 }
 
 class Rule1(params: Rule1Parameters)
@@ -24,7 +24,7 @@ class Rule1(params: Rule1Parameters)
     config.conf.getOrElse("Rule1")(this.params).map(newParams => new Rule1(newParams))
   
   override def fix(implicit doc: SemanticDocument): Patch = {
-    val isLeftParen = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.LeftParen]
+    val isLeftParen  = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.LeftParen]
     val isRightParen = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.RightParen]
     
     val isLeftBrace  = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.LeftBrace]
@@ -34,15 +34,18 @@ class Rule1(params: Rule1Parameters)
 
     val isCatch = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.KwCatch]
     val isCase  = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.KwCase]
-    val isThen = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.KwThen]
+    val isThen  = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.KwThen]
+    val isDo    = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.KwDo]
 
     doc.tree.collect {
       // Rule 1.1
       case ifTree: Term.If =>
-        val (condStart, condEnd) = (ifTree.cond.tokens.head.start, ifTree.cond.tokens.last.end)
+        val condStart = ifTree.cond.tokens.head.start
+        val condEnd   = ifTree.cond.tokens.last.end
+        val thenBegin = ifTree.thenp.tokens.head.start
         
-        val isBeforeCond = (t: Token) => t.start < condStart
-        val isAfterCond  = (t: Token) => t.start >= condEnd
+        def isBeforeCond(t: Token) = t.start < condStart
+        def isAfterCond(t: Token)  = t.start >= condEnd && t.end < thenBegin
 
         // get first opening parenthesis
         val leftParen = ifTree.tokens.find(t => isLeftParen(t) && isBeforeCond(t))
@@ -61,40 +64,45 @@ class Rule1(params: Rule1Parameters)
 
       // Rule 1.2
       case whileTree: Term.While => 
-        val (exprStart, exprEnd) = (whileTree.expr.tokens.head.start, whileTree.expr.tokens.last.end)
+        val exprStart = whileTree.expr.tokens.head.start
+        val exprEnd = whileTree.expr.tokens.last.end
+        val bodyBegin = whileTree.body.tokens.head.start
         
-        val isBeforeExpr = (t: Token) => t.start < exprStart
-        val isAfterExpr  = (t: Token) => t.start >= exprEnd
+        def isBeforeExpr(t: Token) = t.start < exprStart
+        def isAfterExpr(t: Token)  = t.start >= exprEnd && t.end < bodyBegin
 
         // get first opening parenthesis
-        val leftParen = whileTree.tokens.find(t => isLeftParen(t) && isBeforeExpr(t)).get
-        val removeLeftParen = Patch.removeToken(leftParen)
+        val leftParen = whileTree.tokens.find(t => isLeftParen(t) && isBeforeExpr(t))
+        val removeLeftParen = leftParen.map(Patch.removeToken)
 
         // get first closing parenthesis after expression
-        val rightParen = whileTree.tokens.find(t => isRightParen(t) && isAfterExpr(t)).get
-        val removeRightParen = Patch.removeToken(rightParen)
+        val rightParen = whileTree.tokens.find(t => isRightParen(t) && isAfterExpr(t))
+        val removeRightParen = rightParen.map(Patch.removeToken)
 
-        // add DO keyword
-        val addDo = Patch.addRight(rightParen, " do")
+        // add DO keyword if necessary
+        val treeHasDo = whileTree.tokens.exists(isDo)
+        val addDo = Option.when(!treeHasDo)(Patch.addRight(whileTree.expr, " do"))
 
-        removeLeftParen + removeRightParen + addDo
+        Patch.empty + removeLeftParen + removeRightParen + addDo
 
       // Rule 1.3
       case forYieldExpr: Term.ForYield => 
-        val (enumsStart, enumsEnd) = (forYieldExpr.enums.head.tokens.head.start, forYieldExpr.enums.last.tokens.last.end)
+        val enumsStart = forYieldExpr.enums.head.tokens.head.start
+        val enumsEnd   = forYieldExpr.enums.last.tokens.last.end
+        val bodyBegin  = forYieldExpr.body.children.head.tokens.head.start
         
         val isBeforeEnums = (t: Token) => t.start < enumsStart
-        val isAfterEnums  = (t: Token) => t.start >= enumsEnd
+        val isAfterEnums  = (t: Token) => t.start >= enumsEnd && t.end < bodyBegin
 
         // get first opening parenthesis
-        val leftParen = forYieldExpr.tokens.find(t => isLeftParen(t) && isBeforeEnums(t)).get
-        val removeLeftParen = Patch.removeToken(leftParen)
+        val leftParen = forYieldExpr.tokens.find(t => isLeftParen(t) && isBeforeEnums(t))
+        val removeLeftParen = leftParen.map(Patch.removeToken)
 
         // get first closing parenthesis after expression
-        val rightParen = forYieldExpr.tokens.find(t => isRightParen(t) && isAfterEnums(t)).get
-        val removeRightParen = Patch.removeToken(rightParen)
+        val rightParen = forYieldExpr.tokens.find(t => isRightParen(t) && isAfterEnums(t))
+        val removeRightParen = rightParen.map(Patch.removeToken)
 
-        removeLeftParen + removeRightParen
+        Patch.empty + removeLeftParen + removeRightParen
 
       // Rule 1.4
       case forExpr: Term.For => 

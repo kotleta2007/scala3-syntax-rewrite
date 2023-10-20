@@ -15,12 +15,16 @@ object Rule1_Test {
     else 
       "positive"
   val ifMixedSyntax = if x == 0 then "equal" else "not equal"
+  val ifNewSyntax = if x == 0 then "equal" else "not equal"
 
   // rule 1.2
-  val whileLoop = while x >= 0 do { println(x) }
+  val whileOldSyntax   = while x >= 0 do { println(x) }
+  val whileMixedSyntax = while x >= 0 do { println(x) }
+  val whileNewSyntax   = while x >= 0 do { println(x) }
 
   // rule 1.3
-  val forYield = for y <- ys if y > 0 yield x * x
+  val forYieldOld = for y <- ys if y > 0 yield x * x
+  val forYieldNew = for y <- ys if y > 0 yield x * x
   
   // rule 1.4
   val forLoop = for y <- ys do { println(y) }
