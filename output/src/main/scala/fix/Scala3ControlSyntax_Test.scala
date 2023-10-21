@@ -1,6 +1,6 @@
 package fix
 
-object Rule1_Test {
+object Scala3ControlSyntax_Test {
   val x = 4
   val ys = List(1, 2, 3)
 
