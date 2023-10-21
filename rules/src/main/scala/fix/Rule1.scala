@@ -145,17 +145,19 @@ class Rule1(params: Rule1Parameters)
 
         val whitespaceBefore = (t: Token) => isWhitespace(t) && isAfterLeftBrace(t) && isBeforeCase(t)
         val whitespaceAfter  = (t: Token) => isWhitespace(t) && isBeforeRightBrace(t)
+        val whitespaceFinal  = (t: Token) => isWhitespace(t) && isAfterRightBrace(t)
         
         // remove whitespace (indentation) between { and CASE
         // remove whitespace (indentation) before }
         val removeWhitespaceBefore = Patch.removeTokens(tryCatchTree.tokens.filter(whitespaceBefore))
         val removeWhitespaceAfter  = Patch.removeTokens(tryCatchTree.tokens.reverse.takeWhile(whitespaceAfter))
+        val removeWhitespaceFinal  = Patch.removeTokens(tryCatchTree.tokens.filter(whitespaceFinal))
 
         // remove the braces
         val removeLeftBrace = Patch.removeToken(leftBrace)
         val removeRightBrace = Patch.removeToken(rightBrace)
 
-        removeWhitespaceBefore + removeWhitespaceAfter + removeLeftBrace + removeRightBrace
+        removeWhitespaceBefore + removeWhitespaceAfter + removeWhitespaceFinal + removeLeftBrace + removeRightBrace
     }.asPatch
   }
 }

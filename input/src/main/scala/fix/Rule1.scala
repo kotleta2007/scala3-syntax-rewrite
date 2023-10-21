@@ -26,18 +26,21 @@ object Rule1_Test {
   val ifParensInsideCond = if (x > 0) && (x < 0) then "not possible" else "not possible"
 
   // rule 1.2
-  val whileOldSyntax   = while (x >= 0) { println(x) }
-  val whileMixedSyntax = while (x >= 0) do { println(x) }
-  val whileNewSyntax   = while x >= 0 do { println(x) }
+  val whileOldSyntax        = while (x >= 0) { println(x) }
+  val whileMixedSyntax      = while (x >= 0) do { println(x) }
+  val whileNewSyntax        = while x >= 0 do { println(x) }
+  val whileParensInsideCond = while (x >= 0) || (x <= 0) do { println(x) }
 
   // rule 1.3
   val forYieldOld = for (y <- ys if y > 0) yield x * x
   val forYieldNew = for y <- ys if y > 0 yield x * x
+  val forYieldParens = for (x, y) <- ys zip ys yield x * y
   
   // rule 1.4
   val forLoopOld   = for (y <- ys) { println(y) }
   val forLoopNew   = for y <- ys do { println(y) }
   val forLoopMixed = for (y <- ys) do { println(y) }
+  val forLoopParens = for (x, y) <- ys zip ys do { println(x + y) }
 
   // rule 1.5
   val tryCatchOne = 
