@@ -13,6 +13,9 @@ inThisBuild(
       )
     ),
     scalaVersion := V.scala213,
+    semanticdbEnabled := true,
+    semanticdbIncludeInJar := true,
+    semanticdbVersion := scalafixSemanticdb.revision,
     scalacOptions ++= List("-Yrangepos")
     // classLoaderLayeringStrategy in Compile := ClassLoaderLayeringStrategy.Flat
   )

@@ -3,16 +3,30 @@ package fix
 import scalafix.testkit.AbstractSemanticRuleSuite
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scalafix.testkit.AbstractSyntacticRuleSuite
-import org.scalatest.Args
 
-class RuleSuite extends AbstractSyntacticRuleSuite with AnyFunSuiteLike {
-  // runAllTests()
-  // checkDiff(Rule1, testNames.head)
-  // checkDiff()
-  // checkDiff(Rule1, )
-  // check(Rule1, "my test", "val x = 2", "val x = 2")
+class RuleSuite extends AbstractSemanticRuleSuite with AnyFunSuiteLike {
+  // Doesn't really work; bugs with Scalameta
 
-  println()
+  /*
+  val baseDirectory = new File(".").getCanonicalPath
+
+  val inputDirectory = new File(baseDirectory + "/input/src/main/scala/fix")
+  val outputDirectory = new File(baseDirectory + "/output/src/main/scala/fix")
+
   val rule = new Rule1()
-  check(rule, "My Test", "object main {}", "object main {}")
+  
+  for (inputFile <- inputDirectory.listFiles()) {
+    val maybeOutputFile = inputDirectory.listFiles().find(_.getName() == inputFile.getName())
+    
+    maybeOutputFile match {
+      case Some(outputFile) => 
+        val inputFileContents  = Files.readString(inputFile.toPath())
+        val outputFileContents = Files.readString(outputFile.toPath())
+        
+        check(rule, "Rule 1 Test: " + inputFile.getName(), inputFileContents, outputFileContents)
+      case None => ()
+    }
+  }
+  */
+  runAllTests()
 }
