@@ -16,14 +16,14 @@ object Rule1Parameters {
 }
 
 class Rule1(params: Rule1Parameters)
-    extends SemanticRule("Rule1") {
+    extends SyntacticRule("Rule1") {
   
   def this() = this(Rule1Parameters.default)
 
   override def withConfiguration(config: Configuration): Configured[Rule] = 
     config.conf.getOrElse("Rule1")(this.params).map(newParams => new Rule1(newParams))
   
-  override def fix(implicit doc: SemanticDocument): Patch = {
+  override def fix(implicit doc: SyntacticDocument): Patch = {
     val isLeftParen  = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.LeftParen]
     val isRightParen = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.RightParen]
     
