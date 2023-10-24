@@ -13,9 +13,6 @@ inThisBuild(
       )
     ),
     scalaVersion := V.scala213,
-    semanticdbEnabled := true,
-    semanticdbIncludeInJar := true,
-    semanticdbVersion := scalafixSemanticdb.revision,
     scalacOptions ++= List("-Yrangepos")
     // classLoaderLayeringStrategy in Compile := ClassLoaderLayeringStrategy.Flat
   )
@@ -30,7 +27,9 @@ lazy val rules = project.settings(
 
 lazy val input = project.settings(
   scalaVersion := "3.3.1",
-  (publish / skip) := true
+  (publish / skip) := true,
+  semanticdbEnabled := true,
+  semanticdbIncludeInJar := true,
 )
 
 lazy val output = project.settings(
@@ -40,14 +39,15 @@ lazy val output = project.settings(
 
 lazy val tests = project
   .settings(
+    scalaVersion := "2.13.12",
     (publish / skip) := true,
-    libraryDependencies += "ch.epfl.scala" % "scalafix-testkit" % V.scalafixVersion % Test cross CrossVersion.full,
     scalafixTestkitOutputSourceDirectories :=
       (output / Compile / unmanagedSourceDirectories).value,
     scalafixTestkitInputSourceDirectories :=
       (input / Compile / unmanagedSourceDirectories).value,
     scalafixTestkitInputClasspath :=
-      (input / Compile / fullClasspath).value
+      (input / Compile / fullClasspath).value,
+    scalafixTestkitInputScalaVersion := "3.3.1",   
   )
   .dependsOn(rules)
   .enablePlugins(ScalafixTestkitPlugin)
