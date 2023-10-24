@@ -120,7 +120,7 @@ class Scala2ControlSyntax(params: Scala2ControlSyntaxParameters)
         // get first opening parenthesis
         val leftParen = forYieldExpr.tokens.find(t => isLeftParen(t) && isBeforeEnums(t))
 
-        // get first closing parenthesis after expression
+        // get first closing parenthesis after enums
         val rightParen = forYieldExpr.tokens.find(t => isRightParen(t) && isAfterEnums(t))
 
         // add parentheses if necessary
@@ -147,17 +147,33 @@ class Scala2ControlSyntax(params: Scala2ControlSyntaxParameters)
 
         // get first opening parenthesis
         val leftParen = forExpr.tokens.find(t => isLeftParen(t) && isBeforeEnums(t))
-        val removeLeftParen = leftParen.map(Patch.removeToken)
 
-        // get first closing parenthesis after expression
+        // get first closing parenthesis after enums
         val rightParen = forExpr.tokens.find(t => isRightParen(t) && isAfterEnums(t))
-        val removeRightParen = rightParen.map(Patch.removeToken)
-        
-        // add DO keyword (if necessary)
-        val treeHasDo = forExpr.tokens.exists(isDo)
-        val addDo = Option.when(!treeHasDo)(Patch.addRight(forExpr.enums.last, " do"))
 
-        Patch.empty + removeLeftParen + removeRightParen + addDo
+        // add parentheses if necessary
+        val addParens = (leftParen, rightParen) match {
+          case (Some(_), Some(_)) => Patch.empty
+          case (None, None) => 
+            val addLeftParen  = Patch.addLeft(forExpr.enums.head, "(")
+            val addRightParen = Patch.addRight(forExpr.enums.last, ")")
+            
+            addLeftParen + addRightParen
+          case _ => throw new IllegalArgumentException("Invalid syntax: unmatched parentheses")
+        }
+
+        // remove DO keyword if necessary
+        val doToken = forExpr.tokens.find(isDo)
+        
+        val removeDo = doToken match {
+          case Some(t) => 
+            val spaceBeforeDo = forExpr.tokens.find(_.start == t.start - 1).get
+            
+            Patch.removeTokens(List(spaceBeforeDo, t))
+          case None => Patch.empty
+        }
+
+        addParens + removeDo
 
       // Rule 1.5
       case tryCatchTree: Term.Try if tryCatchTree.catchp.size == 1 && params.useCatchInlining => 

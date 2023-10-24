@@ -37,4 +37,10 @@ object Scala2ControlSyntax_Test {
   val forYieldParens = for (x, y) <- ys zip ys yield x * y
   
   // rule 1.4
+  val forLoopOld   = for (y <- ys) { println(y) }
+  val forLoopNew   = for y <- ys do { println(y) }
+  val forLoopMixed = for (y <- ys) do { println(y) }
+  val forLoopParens = for (x, y) <- ys zip ys do { println(x + y) }
+
+  // rule 1.5
 }
