@@ -13,7 +13,7 @@ class RuleSuite extends AbstractSemanticRuleSuite with AnyFunSuiteLike {
   val inputDirectory = new File(baseDirectory + "/input/src/main/scala/fix")
   val outputDirectory = new File(baseDirectory + "/output/src/main/scala/fix")
 
-  val rule = new Rule1()
+  val rule = new Scala3ControlSyntax()
   
   for (inputFile <- inputDirectory.listFiles()) {
     val maybeOutputFile = inputDirectory.listFiles().find(_.getName() == inputFile.getName())

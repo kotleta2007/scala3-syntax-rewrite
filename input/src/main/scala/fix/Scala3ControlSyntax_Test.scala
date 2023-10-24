@@ -1,9 +1,9 @@
 /*
 rules = [
-  Rule1
+  Scala3ControlSyntax
 ]
 
-Rule1.useCatchInlining = true
+Scala3ControlSyntax.useCatchInlining = true
  */
 package fix
 

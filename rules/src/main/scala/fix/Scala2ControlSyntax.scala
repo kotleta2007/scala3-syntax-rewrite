@@ -5,23 +5,23 @@ import scala.meta._
 import scala.meta.tokens.Token.LeftParen
 import metaconfig.Configured
 
-case class Rule1Parameters(
+case class Scala2ControlSyntaxParameters(
   useCatchInlining: Boolean
 )
 
-object Rule1Parameters {
-  val default = Rule1Parameters(false)
-  implicit val surface: metaconfig.generic.Surface[Rule1Parameters] = metaconfig.generic.deriveSurface[Rule1Parameters]
-  implicit val decoder: metaconfig.ConfDecoder[Rule1Parameters] = metaconfig.generic.deriveDecoder(default)
+object Scala2ControlSyntaxParameters {
+  val default = Scala2ControlSyntaxParameters(false)
+  implicit val surface: metaconfig.generic.Surface[Scala2ControlSyntaxParameters] = metaconfig.generic.deriveSurface[Scala2ControlSyntaxParameters]
+  implicit val decoder: metaconfig.ConfDecoder[Scala2ControlSyntaxParameters] = metaconfig.generic.deriveDecoder(default)
 }
 
-class Rule1(params: Rule1Parameters)
-    extends SyntacticRule("Rule1") {
+class Scala2ControlSyntax(params: Scala2ControlSyntaxParameters)
+    extends SyntacticRule("Scala2ControlSyntax") {
   
-  def this() = this(Rule1Parameters.default)
+  def this() = this(Scala2ControlSyntaxParameters.default)
 
   override def withConfiguration(config: Configuration): Configured[Rule] = 
-    config.conf.getOrElse("Rule1")(this.params).map(newParams => new Rule1(newParams))
+    config.conf.getOrElse("Scala2ControlSyntax")(this.params).map(newParams => new Scala2ControlSyntax(newParams))
   
   override def fix(implicit doc: SyntacticDocument): Patch = {
     val isLeftParen  = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.LeftParen]

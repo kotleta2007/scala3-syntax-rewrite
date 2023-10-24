@@ -1,12 +1,12 @@
 /*
 rules = [
-  Rule1
+  Scala3ControlSyntax
 ]
 
-Rule1.useCatchInlining = true
+Scala3ControlSyntax.useCatchInlining = true
  */
 package fix
 
-object Rule1Backwards_Test {
+object Scala2ControlSyntax_Test {
   
 }

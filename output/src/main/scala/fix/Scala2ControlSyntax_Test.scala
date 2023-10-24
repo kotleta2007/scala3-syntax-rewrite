@@ -1,5 +1,5 @@
 package fix
 
-object Rule1Backwards_Test {
+object Scala2ControlSyntax_Test {
   
 }
