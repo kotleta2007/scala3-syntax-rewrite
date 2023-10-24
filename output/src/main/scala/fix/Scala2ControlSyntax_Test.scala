@@ -25,4 +25,9 @@ object Scala2ControlSyntax_Test {
   val whileParensInsideCond = while ((x >= 0) || (x <= 0)) { println(x) }
 
   // rule 1.3
+  val forYieldOld = for (y <- ys if y > 0) yield x * x
+  val forYieldNew = for (y <- ys if y > 0) yield x * x
+  val forYieldParens = for ((x, y) <- ys zip ys) yield x * y
+  
+  // rule 1.4
 }

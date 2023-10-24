@@ -108,7 +108,6 @@ class Scala2ControlSyntax(params: Scala2ControlSyntaxParameters)
 
         addParens + removeDo
 
-
       // Rule 1.3
       case forYieldExpr: Term.ForYield => 
         val enumsStart = forYieldExpr.enums.head.tokens.head.start
@@ -120,13 +119,22 @@ class Scala2ControlSyntax(params: Scala2ControlSyntaxParameters)
 
         // get first opening parenthesis
         val leftParen = forYieldExpr.tokens.find(t => isLeftParen(t) && isBeforeEnums(t))
-        val removeLeftParen = leftParen.map(Patch.removeToken)
 
         // get first closing parenthesis after expression
         val rightParen = forYieldExpr.tokens.find(t => isRightParen(t) && isAfterEnums(t))
-        val removeRightParen = rightParen.map(Patch.removeToken)
 
-        Patch.empty + removeLeftParen + removeRightParen
+        // add parentheses if necessary
+        val addParens = (leftParen, rightParen) match {
+          case (Some(_), Some(_)) => Patch.empty
+          case (None, None) => 
+            val addLeftParen  = Patch.addLeft(forYieldExpr.enums.head, "(")
+            val addRightParen = Patch.addRight(forYieldExpr.enums.last, ")")
+            
+            addLeftParen + addRightParen
+          case _ => throw new IllegalArgumentException("Invalid syntax: unmatched parentheses")
+        }
+
+        addParens
 
       // Rule 1.4
       case forExpr: Term.For => 
