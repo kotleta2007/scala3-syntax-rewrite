@@ -13,9 +13,6 @@ inThisBuild(
       )
     ),
     scalaVersion := V.scala213,
-    semanticdbEnabled := true,
-    semanticdbIncludeInJar := true,
-    semanticdbVersion := scalafixSemanticdb.revision,
     scalacOptions ++= List("-Yrangepos")
     // classLoaderLayeringStrategy in Compile := ClassLoaderLayeringStrategy.Flat
   )
@@ -30,7 +27,9 @@ lazy val rules = project.settings(
 
 lazy val input = project.settings(
   scalaVersion := "3.3.1",
-  (publish / skip) := true
+  (publish / skip) := true,
+  semanticdbEnabled := true,
+  semanticdbIncludeInJar := true,
 )
 
 lazy val output = project.settings(
