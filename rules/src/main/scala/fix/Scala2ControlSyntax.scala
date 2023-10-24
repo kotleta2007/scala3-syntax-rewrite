@@ -49,18 +49,30 @@ class Scala2ControlSyntax(params: Scala2ControlSyntaxParameters)
 
         // get first opening parenthesis
         val leftParen = ifTree.tokens.find(t => isLeftParen(t) && isBeforeCond(t))
-        // ifTree.tokens.collectFirst { case t: LeftParen if t.start >= condEnd => t }
-        val removeLeftParen = leftParen.map(Patch.removeToken)
 
         // get first closing parenthesis after condition
         val rightParen = ifTree.tokens.find(t => isRightParen(t) && isAfterCond(t))
-        val removeRightParen = rightParen.map(Patch.removeToken)
+        
+        // add parentheses if necessary
+        val addParens = (leftParen, rightParen) match {
+          case (Some(_), Some(_)) => Patch.empty
+          case (None, None) => Patch.addAround(ifTree.cond, "(", ")")
+          case _ => throw new IllegalArgumentException("Invalid syntax: unmatched parentheses")
+        }
 
-        // add THEN keyword if necessary
+        // remove THEN keyword if necessary
         val treeHasThen = ifTree.tokens.exists(isThen)
-        val addThen = Option.when(!treeHasThen)(Patch.addRight(ifTree.cond, " then"))
+        val thenToken = ifTree.tokens.find(isThen)
+        
+        val removeThen = thenToken match {
+          case Some(t) => 
+            val spaceBeforeThen = ifTree.tokens.find(_.start == t.start - 1).get
+            
+            Patch.removeTokens(List(spaceBeforeThen, t))
+          case None => Patch.empty
+        }
 
-        Patch.empty + removeLeftParen + removeRightParen + addThen
+        addParens + removeThen
 
       // Rule 1.2
       case whileTree: Term.While => 
