@@ -31,11 +31,13 @@ class Scala2ControlSyntax(params: Scala2ControlSyntaxParameters)
     val isRightBrace = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.RightBrace]
 
     val isWhitespace = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.Whitespace]
+    val isNewLine    = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.EOL]
 
     val isCatch = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.KwCatch]
     val isCase  = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.KwCase]
     val isThen  = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.KwThen]
     val isDo    = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.KwDo]
+    val isTry   = (t: Token) => t.isInstanceOf[scala.meta.tokens.Token.KwTry]
 
     doc.tree.collect {
       // Rule 1.1
@@ -177,35 +179,16 @@ class Scala2ControlSyntax(params: Scala2ControlSyntaxParameters)
 
       // Rule 1.5
       case tryCatchTree: Term.Try if tryCatchTree.catchp.size == 1 && params.useCatchInlining => 
-        val catchToken = tryCatchTree.tokens.find(t => isCatch(t)).get
-        val caseToken  = tryCatchTree.tokens.find(t => isCase(t)).get
+        // tryCatchTree.parent.get.tokens.foreach(x => println(x.text, x.start, x.end, isNewLine(x)))
+        val newLine  = tryCatchTree.parent.get.tokens.find(isNewLine).get // go back from tryToken to anything that isn't a space
+        val tryToken = tryCatchTree.parent.get.tokens.find(isTry).get
+        val indentationSize = tryToken.start - newLine.end
+        val matchingIndentation = " " * indentationSize
 
-        val isAfterCatch  = (t: Token) => t.start >= catchToken.end
-        val isAfterCase   = (t: Token) => t.start >= caseToken.end
-        val isBeforeCase  = (t: Token) => t.end <= caseToken.start
+        val beforeCase = Patch.addLeft(tryCatchTree.cases.head, "{ \n" + matchingIndentation + "  ")
+        val atTheEnd   = Patch.addRight(tryCatchTree, "\n" + matchingIndentation + "}")
 
-        val leftBrace  = tryCatchTree.tokens.find(t => isLeftBrace(t) && isAfterCatch(t)).get
-        val rightBrace = tryCatchTree.tokens.find(t => isRightBrace(t) && isAfterCase(t)).get
-
-        val isBeforeRightBrace = (t: Token) => t.end <= rightBrace.start
-        val isAfterRightBrace  = (t: Token) => t.start >= rightBrace.end
-        val isAfterLeftBrace  = (t: Token) => t.start >= leftBrace.end
-
-        val whitespaceBefore = (t: Token) => isWhitespace(t) && isAfterLeftBrace(t) && isBeforeCase(t)
-        val whitespaceAfter  = (t: Token) => isWhitespace(t) && isBeforeRightBrace(t)
-        val whitespaceFinal  = (t: Token) => isWhitespace(t) && isAfterRightBrace(t)
-        
-        // remove whitespace (indentation) between { and CASE
-        // remove whitespace (indentation) before }
-        val removeWhitespaceBefore = Patch.removeTokens(tryCatchTree.tokens.filter(whitespaceBefore))
-        val removeWhitespaceAfter  = Patch.removeTokens(tryCatchTree.tokens.reverse.takeWhile(whitespaceAfter))
-        val removeWhitespaceFinal  = Patch.removeTokens(tryCatchTree.tokens.filter(whitespaceFinal))
-
-        // remove the braces
-        val removeLeftBrace = Patch.removeToken(leftBrace)
-        val removeRightBrace = Patch.removeToken(rightBrace)
-
-        removeWhitespaceBefore + removeWhitespaceAfter + removeWhitespaceFinal + removeLeftBrace + removeRightBrace
+        beforeCase + atTheEnd
     }.asPatch
   }
 }

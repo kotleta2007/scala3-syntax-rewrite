@@ -43,4 +43,11 @@ object Scala2ControlSyntax_Test {
   val forLoopParens = for (x, y) <- ys zip ys do { println(x + y) }
 
   // rule 1.5
+  val tryCatchOne = 
+    try println(x) catch case ex: Exception => println(ex.toString())
+  val tryCatchTwo = 
+    try println(x) catch { 
+      case ex: Exception => println(ex.toString())
+      case ex: NullPointerException => println("Null pointer exception")
+    }
 }
