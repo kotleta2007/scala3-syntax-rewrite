@@ -61,7 +61,6 @@ class Scala2ControlSyntax(params: Scala2ControlSyntaxParameters)
         }
 
         // remove THEN keyword if necessary
-        val treeHasThen = ifTree.tokens.exists(isThen)
         val thenToken = ifTree.tokens.find(isThen)
         
         val removeThen = thenToken match {
@@ -85,17 +84,30 @@ class Scala2ControlSyntax(params: Scala2ControlSyntaxParameters)
 
         // get first opening parenthesis
         val leftParen = whileTree.tokens.find(t => isLeftParen(t) && isBeforeExpr(t))
-        val removeLeftParen = leftParen.map(Patch.removeToken)
 
         // get first closing parenthesis after expression
         val rightParen = whileTree.tokens.find(t => isRightParen(t) && isAfterExpr(t))
-        val removeRightParen = rightParen.map(Patch.removeToken)
+        
+        // add parentheses if necessary
+        val addParens = (leftParen, rightParen) match {
+          case (Some(_), Some(_)) => Patch.empty
+          case (None, None) => Patch.addAround(whileTree.expr, "(", ")")
+          case _ => throw new IllegalArgumentException("Invalid syntax: unmatched parentheses")
+        }
 
-        // add DO keyword if necessary
-        val treeHasDo = whileTree.tokens.exists(isDo)
-        val addDo = Option.when(!treeHasDo)(Patch.addRight(whileTree.expr, " do"))
+        // remove DO keyword if necessary
+        val doToken = whileTree.tokens.find(isDo)
+        
+        val removeDo = doToken match {
+          case Some(t) => 
+            val spaceBeforeDo = whileTree.tokens.find(_.start == t.start - 1).get
+            
+            Patch.removeTokens(List(spaceBeforeDo, t))
+          case None => Patch.empty
+        }
 
-        Patch.empty + removeLeftParen + removeRightParen + addDo
+        addParens + removeDo
+
 
       // Rule 1.3
       case forYieldExpr: Term.ForYield => 

@@ -19,4 +19,10 @@ object Scala2ControlSyntax_Test {
   val ifParensInsideCond = if ((x > 0) && (x < 0)) "not possible" else "not possible"
 
   // rule 1.2
+  val whileOldSyntax        = while (x >= 0) { println(x) }
+  val whileMixedSyntax      = while (x >= 0) { println(x) }
+  val whileNewSyntax        = while (x >= 0) { println(x) }
+  val whileParensInsideCond = while ((x >= 0) || (x <= 0)) { println(x) }
+
+  // rule 1.3
 }
