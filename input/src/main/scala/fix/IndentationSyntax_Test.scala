@@ -55,4 +55,14 @@ object IndentationSyntax_Test {
     val myFactor = 2
                       myFactor * x
   }
+
+  try println(xs) catch {
+      case ex: Exception => println(ex.toString())
+                    case ex: NullPointerException => println("Null pointer exception")
+  }
+
+  val z = Option(xs) match {
+    case Some(value) => "found"
+                                  case None => "not found"
+  }
 }

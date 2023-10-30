@@ -36,15 +36,14 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
     def isOutdent(t: Token)     = t.isInstanceOf[scala.meta.tokens.Token.Indentation.Outdent]
     
     doc.tree.collect {
-      case block: Term.Block => 
-        // the rule only applies to control structures
-        val isInControlStructure = block.parent match {
+      case block @ (_: Term.Block | _: Term.Try | _: Term.Match) => 
+        // if we have a block (not cases), the rule only applies to control structures
+        val isInControlStructure = if (!block.isInstanceOf[Term.Block]) true else block.parent match {
           case Some(tree) => tree match {
             case Term.If(_, _, _) => true
             case Term.While(_, _) => true
             case Term.For(_, _) => true
             case Term.ForYield(_, _) => true
-            case Term.Try(_, _, _) => true
             case _ => false
           }
           case None => false
@@ -125,7 +124,6 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
 
           patches.foldLeft(Patch.empty)(_ + _) + removeBraces + removeWhitespaceBeforeRightBrace
         }
-        
-    }.asPatch
+      }.asPatch
   }
 }
