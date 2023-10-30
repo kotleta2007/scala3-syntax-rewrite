@@ -1,6 +1,6 @@
 package fix
 
-object IndentationSyntax_Test {
+object IndentationSyntax_Test :
   if (true) 
     println("a")
     println("b")
@@ -49,4 +49,3 @@ object IndentationSyntax_Test {
   val z = Option(xs) match 
     case Some(value) => "found"
     case None => "not found"
-}

@@ -36,6 +36,25 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
     def isOutdent(t: Token)     = t.isInstanceOf[scala.meta.tokens.Token.Indentation.Outdent]
     
     doc.tree.collect {
+      case template: Template => 
+        
+        val isBracedBlock = template.tokens.takeWhile(t => !isNewLine(t)).exists(isLeftBrace)
+        if (!isBracedBlock) {
+          Patch.empty
+        } else {
+          val leftBrace  = template.tokens.find(t => isLeftBrace(t)).get
+          val rightBrace = template.tokens.findLast(t => isRightBrace(t)).get 
+
+          val replaceLeftBraceWithColon = Patch.replaceToken(leftBrace, ":")
+          val removeBraces = Patch.removeToken(rightBrace)
+
+          // We assume that the last token in the block is the closing brace
+          val whitespaceBeforeRightBrace = template.tokens.reverse.tail.takeWhile(isWhitespace)
+          val removeWhitespaceBeforeRightBrace = Patch.removeTokens(whitespaceBeforeRightBrace)
+
+          replaceLeftBraceWithColon + removeBraces + removeWhitespaceBeforeRightBrace
+        }
+
       case block @ (_: Term.Block | _: Term.Try | _: Term.Match) => 
         // if we have a block (not cases), the rule only applies to control structures
         val isInControlStructure = if (!block.isInstanceOf[Term.Block]) true else block.parent match {
