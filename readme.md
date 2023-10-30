@@ -18,6 +18,11 @@
 * [AST Explorer](https://astexplorer.net/#/gist/ec56167ffafb20cbd8d68f24a37043a9/677e43f3adb93db8513dbe4e2c868dd4f78df4b3)
 * [Scala 3 Book (Control Structures)](https://docs.scala-lang.org/scala3/book/control-structures.html)
 
+---
+
+* [Scastie](https://scastie.scala-lang.org/)
+* [Optional Braces (Baeldung Tutorial)](https://www.baeldung.com/scala/optional-braces)
+
 ## Running the tests
 ```
 sbt tests/test
