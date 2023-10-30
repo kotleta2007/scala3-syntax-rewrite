@@ -37,12 +37,14 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
     
     doc.tree.collect {
       case block: Term.Block => 
-        // block.tokens.tokens.map(t => println(t, isSpace(t)))
-
         // the rule only applies to control structures
         val isInControlStructure = block.parent match {
           case Some(tree) => tree match {
             case Term.If(_, _, _) => true
+            case Term.While(_, _) => true
+            case Term.For(_, _) => true
+            case Term.ForYield(_, _) => true
+            case Term.Try(_, _, _) => true
             case _ => false
           }
           case None => false
