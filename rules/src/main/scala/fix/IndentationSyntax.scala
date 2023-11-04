@@ -6,7 +6,9 @@ import metaconfig.Configured
 
 case class IndentationSyntaxParameters(
   addEndMarkers: Boolean,
-  blockSize: Option[Int] // if block size > N lines, add end marker
+  blockSize: Option[Int], // if block size > N lines, add end marker
+  // insertEndMarkerMinLines (look at Scalafmt)
+  // useOptimalIndentation (instead of first line indentation width, use smallest possible indentation (1 tab))
 )
 
 object IndentationSyntaxParameters {
@@ -28,12 +30,23 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
     def isRightBrace(t: Token)  = t.isInstanceOf[scala.meta.tokens.Token.RightBrace]
 
     def isWhitespace(t: Token)  = t.isInstanceOf[scala.meta.tokens.Token.Whitespace]
-    def isNewLine(t: Token)     = t.isInstanceOf[scala.meta.tokens.Token.EOL]
+    def isNewLine(t: Token)     = t.isInstanceOf[scala.meta.tokens.Token.AtEOL]
     def isSpace(t: Token)       = t.isInstanceOf[scala.meta.tokens.Token.HSpace]
 
     def isIndentation(t: Token) = t.isInstanceOf[scala.meta.tokens.Token.Indentation]
     def isIndent(t: Token)      = t.isInstanceOf[scala.meta.tokens.Token.Indentation.Indent]
     def isOutdent(t: Token)     = t.isInstanceOf[scala.meta.tokens.Token.Indentation.Outdent]
+
+    // Map [Int, Indentation={tabs and spaces}]
+    
+    // var x = ???
+
+    // look into scalatest/scalatest for code examples
+
+    // look into scalaz
+    // look into dotty/community-build/community-projects
+    // look into dotty itself:  it's a mix of Scala2 and Scala3 syntax
+    
     
     doc.tree.collect {
       case template: Template => 
@@ -59,10 +72,10 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
         // if we have a block (not cases), the rule only applies to control structures
         val isInControlStructure = if (!block.isInstanceOf[Term.Block]) true else block.parent match {
           case Some(tree) => tree match {
-            case Term.If(_, _, _) => true
-            case Term.While(_, _) => true
+            case Term.If(_,_,_) | Term.While(_,_) => true
             case Term.For(_, _) => true
             case Term.ForYield(_, _) => true
+            // add val, var, def
             case _ => false
           }
           case None => false
@@ -76,11 +89,11 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
         val isBracedBlock = block.tokens.takeWhile(t => !isNewLine(t)).exists(isLeftBrace)
         if (!isBracedBlock || !isInControlStructure) {
           Patch.empty
+
+          // addEndMarker
         } else {
           val leftBrace  = block.tokens.find(t => isLeftBrace(t)).get
-          // val RightBrace = block.tokens.reverse.find(t => isRightBrace(t)).get
-          // is it better to reverse and find, or to findLast?
-          val rightBrace = block.tokens.findLast(t => isRightBrace(t)).get 
+          val rightBrace = block.tokens.findLast(t => isRightBrace(t)).get
 
           // calculate the indentation level of the first line
           def isAfterLeftBrace(t: Token) = t.start >= leftBrace.end
@@ -89,7 +102,7 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
           val firstIndentationLevel = firstIndentedToken.start - newLineAfterLeftBrace.end
           // println("Indentation level for this block:", firstIndentationLevel)
 
-          // If there is no indentation (=0), set it to the indentation of the parent+2
+          // If there is no indentation (=0), set it to the indentation of the parent+1 indentation (2 spaces or tab)
 
           // match the indentation on all subsequent levels
           def isAfterFirstIndentedToken(t: Token) = t.start >= firstIndentedToken.end
@@ -130,10 +143,29 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
           dialects.Scala3.allowTypeInBlock
           */
 
+          // Further work: use dialects for refining rule
+
           if (params.addEndMarkers) {
             // add END at the indentation level of the parent
             Patch.empty
           }
+
+          val addEndMarker = Patch.empty
+          /*
+          val addEndMarker = params.addEndMarkers match {
+            case true => 
+              val endName = block match {
+                case _: Term.If => "if"
+                case _: Term.While => "while"
+                case _: Term.For => "for"
+                case _: Term.ForYield => "for"
+                case _: Term.Try => "try"
+                case _: Term.Match => "match"
+              }
+              Patch.addRight(rightBrace, "end " + endName)
+            case false => Patch.empty 
+          }
+          */
 
           val removeBraces = Patch.removeToken(leftBrace) + Patch.removeToken(rightBrace)
 
@@ -141,7 +173,7 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
           val whitespaceBeforeRightBrace = block.tokens.reverse.tail.takeWhile(isWhitespace)
           val removeWhitespaceBeforeRightBrace = Patch.removeTokens(whitespaceBeforeRightBrace)
 
-          patches.foldLeft(Patch.empty)(_ + _) + removeBraces + removeWhitespaceBeforeRightBrace
+          Patch.fromIterable(patches) + addEndMarker + removeBraces + removeWhitespaceBeforeRightBrace
         }
       }.asPatch
   }

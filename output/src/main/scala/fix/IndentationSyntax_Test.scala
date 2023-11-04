@@ -49,3 +49,7 @@ object IndentationSyntax_Test :
   val z = Option(xs) match 
     case Some(value) => "found"
     case None => "not found"
+
+  if (true) 
+    if (true) 
+    println("nested")

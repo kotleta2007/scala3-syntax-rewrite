@@ -8,7 +8,11 @@ IndentationSyntax.addEndMarkers = true
 package fix
 
 object IndentationSyntax_Test {
-  if (true) {
+  if (true) 
+    
+    
+    
+  {
     println("a")
     println("b")
     println("c")
@@ -64,5 +68,16 @@ object IndentationSyntax_Test {
   val z = Option(xs) match {
     case Some(value) => "found"
                                   case None => "not found"
+  }
+
+  if (true) {
+  println("nested")
+  }
+
+  if (true) {
+    println("nested")
+    if (true) {
+      println("nested")
+    }
   }
 }
