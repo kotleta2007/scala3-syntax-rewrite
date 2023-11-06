@@ -23,6 +23,11 @@
 * [Scastie](https://scastie.scala-lang.org/)
 * [Optional Braces (Baeldung Tutorial)](https://www.baeldung.com/scala/optional-braces)
 
+---
+
+* [Scala 2.13 Language Specification](https://www.scala-lang.org/files/archive/spec/2.13/)
+* [Scala 3.4 Language Specification](https://www.scala-lang.org/files/archive/spec/3.4/)
+
 ## Running the tests
 ```
 sbt tests/test
