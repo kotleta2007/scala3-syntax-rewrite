@@ -1,15 +1,15 @@
 package fix
 
-object IndentationSyntax_Test :
+object IndentationSyntax_Test:
   if (true) 
     println("a")
     println("b")
     println("c")
 
   if (true) 
-    println("a")
-    println("b")
-    println("c")
+    println("a2")
+    println("b2")
+    println("c2")
 
   if (true) 
     println("a")
@@ -42,14 +42,6 @@ object IndentationSyntax_Test :
     val myFactor = 2
     myFactor * x
 
-  try println(xs) catch 
-      case ex: Exception => println(ex.toString())
-      case ex: NullPointerException => println("Null pointer exception")
-
-  val z = Option(xs) match 
-    case Some(value) => "found"
-    case None => "not found"
-
-  if (true) 
-    if (true) 
-    println("nested")
+  object MyObject:
+    override def toString(): String = "myObject"
+  end MyObject

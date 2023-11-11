@@ -8,20 +8,16 @@ IndentationSyntax.addEndMarkers = true
 package fix
 
 object IndentationSyntax_Test {
-  if (true) 
-    
-    
-    
-  {
+  if (true) {
     println("a")
     println("b")
     println("c")
   }
 
   if (true) {
-    println("a")
-      println("b")
-          println("c")
+    println("a2")
+      println("b2")
+          println("c2")
   }
 
   if (true) {
@@ -60,24 +56,7 @@ object IndentationSyntax_Test {
                       myFactor * x
   }
 
-  try println(xs) catch {
-      case ex: Exception => println(ex.toString())
-                    case ex: NullPointerException => println("Null pointer exception")
-  }
+  object MyObject:
+    override def toString(): String = "myObject"
 
-  val z = Option(xs) match {
-    case Some(value) => "found"
-                                  case None => "not found"
-  }
-
-  if (true) {
-  println("nested")
-  }
-
-  if (true) {
-    println("nested")
-    if (true) {
-      println("nested")
-    }
-  }
 }
