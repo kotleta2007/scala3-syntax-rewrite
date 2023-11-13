@@ -4,19 +4,12 @@ import scalafix.v1._
 import scala.meta._
 import metaconfig.Configured
 
-case class RLEIndent(char: Char, count: Int) // check that char is strictly in {' ', '\t'} 
-
 case class IndentationSyntaxParameters(
   addEndMarkers: Boolean,
-  blockSize: Option[Int], // if block size > N lines, add end marker
-  // insertEndMarkerMinLines (look at Scalafmt)
-  // useOptimalIndentation (instead of first line indentation width, use smallest possible indentation (1 tab))
-  // defaultIndentation: List[RLEIndent]
 )
 
 object IndentationSyntaxParameters {
-  // val default = IndentationSyntaxParameters(false, None, List(RLEIndent(' ', 2)))
-  val default = IndentationSyntaxParameters(false, None)
+  val default = IndentationSyntaxParameters(false)
   implicit val surface: metaconfig.generic.Surface[IndentationSyntaxParameters] = metaconfig.generic.deriveSurface[IndentationSyntaxParameters]
   implicit val decoder: metaconfig.ConfDecoder[IndentationSyntaxParameters] = metaconfig.generic.deriveDecoder(default)
 }
@@ -38,29 +31,26 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
     def isSpace(t: Token)       = t.isInstanceOf[scala.meta.tokens.Token.Space]        // Space
     def isWhitespace(t: Token)  = t.isInstanceOf[scala.meta.tokens.Token.Whitespace]   // HSpace, AtEOL
     
-    // Map [Int, Indentation={tabs and spaces}]
-    
-    // var x = ???
+    sealed trait IndentationCharacter
 
-    // look into scalatest/scalatest for code examples
+    case object Empty extends IndentationCharacter
+    case object Space extends IndentationCharacter
+    case object Tab extends IndentationCharacter
 
-    // look into scalaz
-    // look into dotty/community-build/community-projects
-    // look into dotty itself:  it's a mix of Scala2 and Scala3 syntax
-    
-    /*
-    scala:
+    // type RLEIndent = List[(Int, IndentationCharacter)]
+    case class RLEIndent(indents: List[(Int, IndentationCharacter)])
 
-    * convert to lines
-    * get whitespace from line (return RLE encoded list of tabs+spaces)
-    * whitespace comparison operator < (2 tabs, 1 space < 2 tabs, 2 spaces)
-    * write tests for nested (if and matching, while and try)
-        1. control structures 2. try-catch and matching 3. templates
-    * add end markers for the following types of blocks:
-      "if", "try", "template"
-    
-    */
-    
+    // val trial = RLEIndent(List((2, Tab), (4, Space), (1, Empty)))
+
+    def addEndMarkerMethod(blockTree: Tree) = {
+      if (!params.addEndMarkers) {
+        Patch.empty
+      } else {
+        Patch.empty
+      }
+    }
+
+
     doc.tree.collect {
       case template: Template => 
         val isBracedBlock = isLeftBrace(template.tokens.dropWhile(t => isWhitespace(t)).head)
@@ -69,9 +59,6 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
             val lastToken = template.tokens.last
             val indentationLevel = template.parent match {
               case Some(parentTree) => 
-                // println("I have a parent")
-                // println(parentTree)
-                // println(template)
                 def isColon(t: Token) = t.isInstanceOf[scala.meta.tokens.Token.Colon]
                 val colon = parentTree.tokens.find(isColon).get
                 def isAfterColon(t: Token) = t.start > colon.end
@@ -150,13 +137,6 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
         // the first non-whitespace token after the start of the block is {
         val isBracedBlock = isLeftBrace(block.tokens.dropWhile(t => isWhitespace(t)).head)
 
-        /*
-        println("in block")
-        println(block.toString())
-        println("in control structure? : ", isInControlStructure)
-        println("is braced block ? : ", isBracedBlock)
-        */
-
         if (!isBracedBlock || !isInControlStructure) {
           Patch.empty
 
@@ -197,24 +177,6 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
 
             tokensToIndent = lines
           }
-          
-          // block.tokens.takeWhile()
-
-          // get lines: split the tokens on new lines (space+, tokens+, \n)
-          // for every line in the block:
-          // remove leading whitespace
-          // put as many spaces as needed
-        
-          /* interesting booleans in dialects:
-          dialects.Scala3.allowEndMarker
-          dialects.Scala3.allowFewerBraces
-          dialects.Scala3.allowMultilinePrograms
-          dialects.Scala3.allowProcedureSyntax
-          dialects.Scala3.allowSignificantIndentation
-          dialects.Scala3.allowTypeInBlock
-          */
-
-          // Further work: use dialects for refining rule
 
           if (params.addEndMarkers) {
             // add END at the indentation level of the parent
@@ -222,21 +184,6 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
           }
 
           val addEndMarker = Patch.empty
-          /*
-          val addEndMarker = params.addEndMarkers match {
-            case true => 
-              val endName = block match {
-                case _: Term.If => "if"
-                case _: Term.While => "while"
-                case _: Term.For => "for"
-                case _: Term.ForYield => "for"
-                case _: Term.Try => "try"
-                case _: Term.Match => "match"
-              }
-              Patch.addRight(rightBrace, "end " + endName)
-            case false => Patch.empty 
-          }
-          */
 
           val removeBraces = Patch.removeToken(leftBrace) + Patch.removeToken(rightBrace)
 
