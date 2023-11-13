@@ -6,10 +6,11 @@ import metaconfig.Configured
 
 case class IndentationSyntaxParameters(
   addEndMarkers: Boolean,
+  endMarkers: List[String]
 )
 
 object IndentationSyntaxParameters {
-  val default = IndentationSyntaxParameters(false)
+  val default = IndentationSyntaxParameters(false, List("object"))
   implicit val surface: metaconfig.generic.Surface[IndentationSyntaxParameters] = metaconfig.generic.deriveSurface[IndentationSyntaxParameters]
   implicit val decoder: metaconfig.ConfDecoder[IndentationSyntaxParameters] = metaconfig.generic.deriveDecoder(default)
 }
@@ -42,27 +43,25 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
 
     // val trial = RLEIndent(List((2, Tab), (4, Space), (1, Empty)))
 
-    def addEndMarkerMethod(blockTree: Tree) = {
-      if (!params.addEndMarkers) {
-        Patch.empty
-      } else {
-        Patch.empty
+    def matchTreeTypeWithEndMarkers(blockTree: Tree): Boolean = {
+      blockTree.parent.get match {
+        case _: Defn.Object => params.endMarkers.contains("object")
+        case _: Defn.Class  => params.endMarkers.contains("class")
+        case _ => false
       }
     }
 
-
-    doc.tree.collect {
-      case template: Template => 
-        val isBracedBlock = isLeftBrace(template.tokens.dropWhile(t => isWhitespace(t)).head)
-        if (!isBracedBlock) {
-          val addEndMarker = if (params.addEndMarkers) {
-            val lastToken = template.tokens.last
-            val indentationLevel = template.parent match {
+    def addEndMarkerMethod(blockTree: Tree): Patch = {
+      if (!params.addEndMarkers || !matchTreeTypeWithEndMarkers(blockTree)) {
+        Patch.empty
+      } else {
+        val lastToken = blockTree.tokens.last
+            val indentationLevel = blockTree.parent match {
               case Some(parentTree) => 
                 def isColon(t: Token) = t.isInstanceOf[scala.meta.tokens.Token.Colon]
                 val colon = parentTree.tokens.find(isColon).get
                 def isAfterColon(t: Token) = t.start > colon.end
-                val whitespaceAfterColon = template.tokens.filter(isAfterColon).takeWhile(isHSpace)
+                val whitespaceAfterColon = blockTree.tokens.filter(isAfterColon).takeWhile(isHSpace)
                 val indentationLevelInParent = whitespaceAfterColon.size
 
                 indentationLevelInParent
@@ -74,17 +73,22 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
             val newIndentation = indentationLevel - 2
 
             // scala.meta.Defn.Object]
-            val templateName = template.parent.get match {
+            val endMarkerName = blockTree.parent.get match {
               case member: scala.meta.Member => member.name
             }
-            val stringToAdd = "\n" + " " * newIndentation + "end " + templateName
+            val stringToAdd = "\n" + " " * newIndentation + "end " + endMarkerName
             val endMarker = Patch.addRight(lastToken, stringToAdd)
 
             endMarker
-          } else {
-            Patch.empty
-          }
-          addEndMarker
+      }
+    }
+
+
+    doc.tree.collect {
+      case template: Template => 
+        val isBracedBlock = isLeftBrace(template.tokens.dropWhile(t => isWhitespace(t)).head)
+        if (!isBracedBlock) {
+          addEndMarkerMethod(template)
         } else {
           val leftBrace  = template.tokens.find(t => isLeftBrace(t)).get
           val rightBrace = template.tokens.findLast(t => isRightBrace(t)).get
