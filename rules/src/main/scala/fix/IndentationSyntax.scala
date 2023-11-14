@@ -8,6 +8,12 @@ import scala.annotation.tailrec
 case class IndentationSyntaxParameters(
   addEndMarkers: Boolean,
   endMarkers: List[String]
+
+  /* End markers supported:
+    - object
+    - class
+    - if
+  */
 )
 
 object IndentationSyntaxParameters {
@@ -52,76 +58,74 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
     }
       
     def splitOn[T](l: Seq[T], delimiter: T) = {
-      val res = splitOnTail(l, Seq.empty, ((x: T) => x == delimiter))
+      val split = splitOnTail(l, Seq.empty, ((x: T) => x == delimiter))
 
-      if (res.last == Seq.empty) {
-        res.init
-      } else {
-        res
-      }
+      if (split.last == Seq.empty) split.init else split
     }
 
 
-    def matchTreeTypeWithEndMarkers(blockTree: Tree): Boolean = {
-      blockTree.parent.get match {
+    def matchTreeTypeWithEndMarkers(tree: Tree): Boolean = {
+      tree match {
         case _: Defn.Object => params.endMarkers.contains("object")
         case _: Defn.Class  => params.endMarkers.contains("class")
         case _: Term.If => params.endMarkers.contains("if")
+
         case _ => false
       }
     }
 
-    def addEndMarkerMethod(blockTree: Tree): Patch = {
-      if (!params.addEndMarkers || !matchTreeTypeWithEndMarkers(blockTree)) {
+    def addEndMarkerMethod(tree: Tree): Patch = {
+      if (!params.addEndMarkers || !matchTreeTypeWithEndMarkers(tree)) {
         Patch.empty
       } else {
-        val lastToken = blockTree.tokens.last
-        val indentationLevel = blockTree.parent match {
-          case Some(parentTree) if blockTree.isInstanceOf[Template] => 
+        val lastToken = tree.tokens.last
+
+        // if tree already has an end marker, don't add it!
+
+        // val matchIndentationOf = ???
+
+        val indentationLevel = tree match {
+          case objectTree: Defn.Object => 
             def isObject(t: Token) = t.isInstanceOf[scala.meta.tokens.Token.KwObject]
-            val objectKw = parentTree.tokens.find(isObject).get
+            val objectKw = objectTree.tokens.find(isObject).get
             def isBeforeObject(t: Token) = t.end <= objectKw.start
 
-            val whitespaceAfterObject = blockTree.parent.get.parent.get.tokens.tokens.filter(isBeforeObject).reverse.takeWhile(isHSpace)
+            val whitespaceAfterObject = objectTree.tokens.tokens.filter(isBeforeObject).reverse.takeWhile(isHSpace)
             val indentationLevelInParent = whitespaceAfterObject.size
 
             indentationLevelInParent
-          case Some(parentTree) if parentTree.isInstanceOf[Term.If] => 
+          case ifTree: Term.If => 
             def isIf(t: Token) = t.isInstanceOf[scala.meta.tokens.Token.KwIf]
-            val ifKw = parentTree.tokens.find(isIf).get
+            val ifKw = ifTree.tokens.find(isIf).get
             def isBeforeIf(t: Token) = t.end <= ifKw.start
 
-            val whitespaceAfterIf = parentTree.parent.get.tokens.tokens.filter(isBeforeIf).reverse.takeWhile(isHSpace)
+            val whitespaceAfterIf = ifTree.tokens.tokens.filter(isBeforeIf).reverse.takeWhile(isHSpace)
             val indentationLevelInParent = whitespaceAfterIf.size
 
             indentationLevelInParent
-          case None => 
-            val currentIndentationLevel = 0
-            currentIndentationLevel
           case _ => 
-            0
+            throw new NotImplementedError("End markers for this structure are not implemented.")
         }
 
-        val newIndentation = math.max(0, indentationLevel)
-
-        // scala.meta.Defn.Object]
-        val endMarkerName = blockTree.parent.get match {
+        val endMarkerName = tree match {
           case member: scala.meta.Member => member.name
-          case _: Term.If => "if" 
+          case _: Term.If => "if"
         }
-        val stringToAdd = "\n" + " " * newIndentation + "end " + endMarkerName
+
+        val stringToAdd = "\n" + " " * indentationLevel + "end " + endMarkerName
         val endMarker = Patch.addRight(lastToken, stringToAdd)
 
         endMarker
       }
     }
 
+    // CHECK IF-THEN-ELSE
 
     doc.tree.collect {
       case template: Template => 
         val isBracedBlock = isLeftBrace(template.tokens.dropWhile(t => isWhitespace(t)).head)
         if (!isBracedBlock) {
-          addEndMarkerMethod(template)
+          addEndMarkerMethod(template.parent.get)
         } else {
           val leftBrace  = template.tokens.find(t => isLeftBrace(t)).get
           val rightBrace = template.tokens.findLast(t => isRightBrace(t)).get
@@ -175,7 +179,7 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
         val isBracedBlock = isLeftBrace(block.tokens.dropWhile(t => isWhitespace(t)).head)
 
         if (!isBracedBlock || !isInControlStructure) {
-          addEndMarkerMethod(block)
+          addEndMarkerMethod(block.parent.get)
         } else {
           val leftBrace  = block.tokens.find(t => isLeftBrace(t)).get
           val rightBrace = block.tokens.findLast(t => isRightBrace(t)).get
@@ -196,7 +200,6 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
 
           var tokensToIndent = block.tokens.filter(t => isFromSecondLine(t) && !isRightBrace(t))
           var patches: List[Patch] = Nil
-
           
           // while (!tokensToIndent.isEmpty) {
           while (tokensToIndent.exists(isNewLine)) {
@@ -213,7 +216,7 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
             tokensToIndent = lines
           }
 
-          val addEndMarker = addEndMarkerMethod(block)
+          val addEndMarker = addEndMarkerMethod(block.parent.get)
 
           val removeBraces = Patch.removeToken(leftBrace) + Patch.removeToken(rightBrace)
 
