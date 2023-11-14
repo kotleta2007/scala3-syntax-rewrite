@@ -27,6 +27,8 @@
 
 * [Scala 2.13 Language Specification](https://www.scala-lang.org/files/archive/spec/2.13/)
 * [Scala 3.4 Language Specification](https://www.scala-lang.org/files/archive/spec/3.4/)
+* [Syntax Summary for Scala 2.13](https://www.scala-lang.org/files/archive/spec/2.13/13-syntax-summary.html)
+* [Syntax Summary for Scala 3.4](https://www.scala-lang.org/files/archive/spec/3.4/13-syntax-summary.html)
 
 ## Running the tests
 ```
