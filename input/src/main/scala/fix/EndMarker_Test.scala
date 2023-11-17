@@ -15,5 +15,8 @@ object EndMarker_Test {
 
   case class MyText(text: String):
     println(text)
-  
+
+  extension (m: MyText)
+    def myPrint = println(m.text)
+
 }

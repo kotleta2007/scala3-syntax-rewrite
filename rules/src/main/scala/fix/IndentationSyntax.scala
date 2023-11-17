@@ -45,10 +45,8 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
     def isClass(t: Token)       = t.isInstanceOf[scala.meta.tokens.Token.KwClass]
     def isTrait(t: Token)       = t.isInstanceOf[scala.meta.tokens.Token.KwTrait]
     def isPackage(t: Token)     = t.isInstanceOf[scala.meta.tokens.Token.KwPackage]
-    // How come there's no support for the "extension" keyword ???
-    // def isExtension(t: Token)   = t.isInstanceOf[scala.meta.tokens.Token.KwExtension]
+    def isExtension(t: Token)   = t.isInstanceOf[scala.meta.tokens.Token.Ident] && t.text == "extension"
     
-    // can I use a union type here???
     def isMod(t: Token)         = t.isInstanceOf[scala.meta.tokens.Token.ModifierKeyword] || t.isInstanceOf[scala.meta.tokens.Token.KwCase]
 
     // WHAT'S A "PACKAGE OBJECT" ???
@@ -90,6 +88,7 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
           case _: Defn.Object => isObject _
           case _: Defn.Class => isClass _
           case _: Defn.Trait => isTrait _
+          case _: Defn.ExtensionGroup => isExtension _
           case _: Term.If => isIf _
           case _: Term.While => isWhile _
           case _ => throw new NotImplementedError("End markers for this syntactic structure are not implemented.")
@@ -113,6 +112,7 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
           // case _: Ctor.Secondary => "this"
           case _: Decl.Val => "val"
           case n: Decl.Given if n.isNameAnonymous => "given"
+          case _: Defn.ExtensionGroup => "extension"
           
           case member: scala.meta.Member => member.name // test if it returns THIS for secondary constructor
         }
@@ -160,12 +160,12 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
     var patches = Nil
     */
     val tokenList = splitOn(doc.tree.tokens.tokens, "\n")
-    // tokenList.foreach(line => line.foreach(t => println(s"\"$t\", ${t.getClass().getCanonicalName()}")))
+    tokenList.foreach(line => line.foreach(t => println(s"\"$t\", ${t.getClass().getCanonicalName()}")))
 
     doc.tree.collect {
       case controlStructureTree @ (_: Term.If | _: Term.While) => 
         addEndMarkerMethod(controlStructureTree)
-      case containingTemplateTree @ (_: Defn.Object | _: Defn.Class | _: Defn.Trait) => 
+      case containingTemplateTree @ (_: Defn.Object | _: Defn.Class | _: Defn.Trait | _: Defn.ExtensionGroup) => 
         addEndMarkerMethod(containingTemplateTree)
       case template: Template => 
         val isBracedBlock = isLeftBrace(template.tokens.dropWhile(t => isWhitespace(t)).head)
