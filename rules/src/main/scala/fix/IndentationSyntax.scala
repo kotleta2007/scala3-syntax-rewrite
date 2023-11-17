@@ -130,7 +130,55 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
     case object Tab extends IndentationCharacter
 
     // type RLEIndent = List[(Int, IndentationCharacter)]
-    case class RLEIndent(indents: List[(Int, IndentationCharacter)])
+    case class RLEIndent(indents: List[(Int, IndentationCharacter)]) {
+      def < (that: RLEIndent): Boolean = {
+        (this, that) match {
+          case (RLEIndent(Nil), RLEIndent(Nil))                                               => false
+          case (RLEIndent(Nil), RLEIndent(h2 :: t2))                                          => true
+          case (RLEIndent(h1 :: t1), RLEIndent(Nil))                                          => false
+          case (RLEIndent(h1 :: t1), RLEIndent(h2 :: t2)) if h1._2 == h2._2 && h1._1 < h2._1  => RLEIndent(t1) <= RLEIndent(t2)
+          case (RLEIndent(h1 :: t1), RLEIndent(h2 :: t2)) if h1._2 == h2._2 && h1._1 == h2._1 => RLEIndent(t1) < RLEIndent(t2)
+          case _                                                                              => false
+        }
+      }
+
+      @scala.annotation.tailrec
+      def == (that: RLEIndent): Boolean = {
+        (this, that) match {
+          case (RLEIndent(Nil), RLEIndent(Nil))                       => true
+          case (RLEIndent(h1 :: t1), RLEIndent(h2 :: t2)) if h1 == h2 => RLEIndent(t1) == RLEIndent(t2)
+          case _                                                      => false
+        }
+      }
+
+      def <= (that: RLEIndent): Boolean = this < that || this == that
+      def != (that: RLEIndent): Boolean = !(this == that)
+      def > (that: RLEIndent):  Boolean = !(this <= that)
+      def >= (that: RLEIndent): Boolean = !(this < that)
+    }
+
+    def rleFromTokens(tokens: Seq[Token]): RLEIndent = {
+      def pack[T](xs: Seq[T]): List[List[T]] = {
+        xs match {
+          case Nil => Nil
+          case head :: next =>
+            val (same, rest) = next.span(_ == head)
+            (head :: same) :: pack(rest)
+        }
+      }
+
+      def convertToIndentationCharacter(token: scala.meta.tokens.Token): IndentationCharacter = {
+        token match {
+          case _: scala.meta.tokens.Token.Space => Space
+          case _: scala.meta.tokens.Token.Tab   => Tab
+          case _                                => throw new Exception("The given token is not HSpace (not a space or a tab).")
+        }
+      }
+
+      val indents = pack(tokens).map(l => (l.size, convertToIndentationCharacter(l.head)))
+
+      RLEIndent(indents)
+    }
 
     // val trial = RLEIndent(List((2, Tab), (4, Space), (1, Empty)))
 
