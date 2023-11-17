@@ -58,5 +58,4 @@ object IndentationSyntax_Test {
 
   object MyObject:
     override def toString(): String = "myObject"
-
 }

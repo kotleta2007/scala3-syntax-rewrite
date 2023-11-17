@@ -29,12 +29,14 @@ object IndentationSyntax_Test:
       println("a")
       println("b")
       println("c")
+  end while
 
   // spaces instead of tabs
   while (true) 
     println("a")
     println("b")
     println("c")
+  end while
 
   val xs = List(1, 2, 3)
   for (x <- xs) 
@@ -49,3 +51,5 @@ object IndentationSyntax_Test:
   object MyObject:
     override def toString(): String = "myObject"
   end MyObject
+
+end IndentationSyntax_Test

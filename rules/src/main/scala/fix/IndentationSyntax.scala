@@ -7,8 +7,8 @@ import scala.annotation.tailrec
 
 case class IndentationSyntaxParameters(
   addEndMarkers: Boolean,
-  endMarkers: List[String], // replace with excluded end markers
-  // minimumNumberOfLines
+  skipEndMarkers: List[String],
+  minLinesForEndMarker: Int,
 
   /* End markers supported:
     - object
@@ -18,7 +18,7 @@ case class IndentationSyntaxParameters(
 )
 
 object IndentationSyntaxParameters {
-  val default = IndentationSyntaxParameters(false, List("object", "if"))
+  val default = IndentationSyntaxParameters(false, Nil, 0)
   implicit val surface: metaconfig.generic.Surface[IndentationSyntaxParameters] = metaconfig.generic.deriveSurface[IndentationSyntaxParameters]
   implicit val decoder: metaconfig.ConfDecoder[IndentationSyntaxParameters] = metaconfig.generic.deriveDecoder(default)
 }
@@ -42,9 +42,88 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
 
     // isKeyword for end markers
     def isObject(t: Token)      = t.isInstanceOf[scala.meta.tokens.Token.KwObject]
+    def isClass(t: Token)       = t.isInstanceOf[scala.meta.tokens.Token.KwClass]
+    def isTrait(t: Token)       = t.isInstanceOf[scala.meta.tokens.Token.KwTrait]
+    def isPackage(t: Token)     = t.isInstanceOf[scala.meta.tokens.Token.KwPackage]
+    // How come there's no support for the "extension" keyword ???
+    // def isExtension(t: Token)   = t.isInstanceOf[scala.meta.tokens.Token.KwExtension]
+    
+    // can I use a union type here???
+    def isMod(t: Token)         = t.isInstanceOf[scala.meta.tokens.Token.ModifierKeyword] || t.isInstanceOf[scala.meta.tokens.Token.KwCase]
+
+    // WHAT'S A "PACKAGE OBJECT" ???
     def isIf(t: Token)          = t.isInstanceOf[scala.meta.tokens.Token.KwIf]
     def isWhile(t: Token)       = t.isInstanceOf[scala.meta.tokens.Token.KwWhile]
-    
+
+    def endMarkerSkipped(tree: Tree): Boolean = {
+      tree match {
+        case _: Defn.Object      => params.skipEndMarkers.contains("object")
+        case _: Defn.Class       => params.skipEndMarkers.contains("class")
+        case _: Defn.Trait       => params.skipEndMarkers.contains("trait")
+
+        case _: Term.If          => params.skipEndMarkers.contains("if")
+        case _: Term.While       => params.skipEndMarkers.contains("while")
+        case _: Term.For         => params.skipEndMarkers.contains("for")
+        case _: Term.ForYield    => params.skipEndMarkers.contains("forYield")
+        case _: Term.Match       => params.skipEndMarkers.contains("match")
+        case _: Term.Try         => params.skipEndMarkers.contains("try")
+        case _: Term.New         => params.skipEndMarkers.contains("new")
+        case _: Term.This        => params.skipEndMarkers.contains("this")
+        case _: Decl.Val         => params.skipEndMarkers.contains("val")
+        case _: Decl.Given       => params.skipEndMarkers.contains("given")
+
+        case _ => false
+      }
+    }
+
+    def addEndMarkerMethod(tree: Tree): Patch = {
+      if (!params.addEndMarkers || endMarkerSkipped(tree)) {
+        Patch.empty
+      } else {
+        val lastToken = tree.tokens.last
+
+        // if tree already has an end marker, don't add it!
+        // ideally, we wouldn't have to check for this
+
+        val lookFor = tree match {
+          case defn: Stat.WithMods if !defn.mods.isEmpty => isMod _ 
+          case _: Defn.Object => isObject _
+          case _: Defn.Class => isClass _
+          case _: Defn.Trait => isTrait _
+          case _: Term.If => isIf _
+          case _: Term.While => isWhile _
+          case _ => throw new NotImplementedError("End markers for this syntactic structure are not implemented.")
+        }
+
+        val keyword = tree.tokens.find(lookFor).getOrElse(throw new Exception("The given tree doesn't contain its defining keyword."))
+        def isBeforeKeyword(t: Token) = t.end <= keyword.start
+        val whitespaceBeforeKeyword = tree.tokens.tokens.filter(isBeforeKeyword).reverse.takeWhile(isHSpace)
+        val indentationLevel = whitespaceBeforeKeyword.size
+
+        val endMarkerName = tree match {
+          case _: Term.If => "if"
+          case _: Term.While => "while"
+          case _: Term.For => "for"
+          case _: Term.ForYield => "for"
+          case _: Term.Match => "match"
+          
+          case _: Term.Try => "try"
+          case _: Term.New => "new"
+          // case _: Term.This => "this"
+          // case _: Ctor.Secondary => "this"
+          case _: Decl.Val => "val"
+          case n: Decl.Given if n.isNameAnonymous => "given"
+          
+          case member: scala.meta.Member => member.name // test if it returns THIS for secondary constructor
+        }
+
+        val stringToAdd = "\n" + " " * indentationLevel + "end " + endMarkerName
+        val endMarker = Patch.addRight(lastToken, stringToAdd)
+
+        endMarker
+      }
+    }
+
     sealed trait IndentationCharacter
 
     case object Space extends IndentationCharacter
@@ -54,7 +133,6 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
     case class RLEIndent(indents: List[(Int, IndentationCharacter)])
 
     // val trial = RLEIndent(List((2, Tab), (4, Space), (1, Empty)))
-
 
     @tailrec
     def splitOnTail[T](l: Seq[T], acc: Seq[Seq[T]], predicate: T => Boolean): Seq[Seq[T]] = {
@@ -70,85 +148,6 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
       if (split.last == Seq.empty) split.init else split
     }
 
-
-    def matchTreeTypeWithEndMarkers(tree: Tree): Boolean = {
-      tree match {
-        case _: Defn.Object      => params.endMarkers.contains("object")
-        case _: Defn.Class       => params.endMarkers.contains("class")
-        case _: Defn.Trait       => params.endMarkers.contains("trait")
-
-        case _: Term.If          => params.endMarkers.contains("if")
-        case _: Term.While       => params.endMarkers.contains("while")
-        case _: Term.For         => params.endMarkers.contains("for")
-        case _: Term.ForYield    => params.endMarkers.contains("forYield")
-        case _: Term.Match       => params.endMarkers.contains("match")
-        case _: Term.Try         => params.endMarkers.contains("try")
-        case _: Term.New         => params.endMarkers.contains("new")
-        case _: Term.This        => params.endMarkers.contains("this")
-        case _: Decl.Val         => params.endMarkers.contains("val")
-        case _: Decl.Given       => params.endMarkers.contains("given")
-
-        case _ => false
-      }
-    }
-
-    def addEndMarkerMethod(tree: Tree): Patch = {
-      if (!params.addEndMarkers || !matchTreeTypeWithEndMarkers(tree)) {
-        Patch.empty
-      } else {
-        val lastToken = tree.tokens.last
-
-        // if tree already has an end marker, don't add it!
-        // ideally, we wouldn't have to check for this
-
-        val keyword = tree match {
-          case objectTree: Defn.Object => 
-            val objectKw = objectTree.tokens.find(isObject).get
-            objectKw
-          case ifTree: Term.If => 
-            val ifKw = ifTree.tokens.find(isIf).get
-            ifKw
-          case whileTree: Term.While => 
-            val whileKw = whileTree.tokens.find(isWhile).get
-            whileKw
-          case _ => 
-            throw new NotImplementedError("End markers for this syntactic structure are not implemented.")
-        }
-
-        def isBeforeKeyword(t: Token) = t.end <= keyword.start
-        val whitespaceAfterKeyword = tree.tokens.tokens.filter(isBeforeKeyword).reverse.takeWhile(isHSpace)
-        val indentationLevelInParent = whitespaceAfterKeyword.size
-
-        val indentationLevel = indentationLevelInParent
-
-        val endMarkerName = tree match {
-          case n: Decl.Given if n.isNameAnonymous => "given"
-          
-          case _: Term.If => "if"
-          case _: Term.While => "while"
-          case _: Term.For => "for"
-          case _: Term.ForYield => "for"
-          case _: Term.Match => "match"
-          
-          case _: Term.Try => "try"
-          // new this val given
-
-          case _: Term.New => "new"
-          // case _: Term.This => "this"
-          case _: Decl.Val => "val"
-          // case _: Ctor.Secondary => "this"
-          
-          
-          case member: scala.meta.Member => member.name // test if it returns THIS for secondary constructor
-        }
-
-        val stringToAdd = "\n" + " " * indentationLevel + "end " + endMarkerName
-        val endMarker = Patch.addRight(lastToken, stringToAdd)
-
-        endMarker
-      }
-    }
-
     // CHECK IF-THEN-ELSE, both for indentation and 
     /*
     val lines: DocLines: List[Array[Token]] = ??? // compute lines
@@ -160,14 +159,18 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
 
     var patches = Nil
     */
+    val tokenList = splitOn(doc.tree.tokens.tokens, "\n")
+    // tokenList.foreach(line => line.foreach(t => println(s"\"$t\", ${t.getClass().getCanonicalName()}")))
 
     doc.tree.collect {
-      // case ifTree: Term.If =>
-      //   ??? // call addEndMarker
+      case controlStructureTree @ (_: Term.If | _: Term.While) => 
+        addEndMarkerMethod(controlStructureTree)
+      case containingTemplateTree @ (_: Defn.Object | _: Defn.Class | _: Defn.Trait) => 
+        addEndMarkerMethod(containingTemplateTree)
       case template: Template => 
         val isBracedBlock = isLeftBrace(template.tokens.dropWhile(t => isWhitespace(t)).head)
         if (!isBracedBlock) {
-          addEndMarkerMethod(template.parent.get)
+          Patch.empty
         } else {
           val leftBrace  = template.tokens.find(t => isLeftBrace(t)).get
           val rightBrace = template.tokens.findLast(t => isRightBrace(t)).get
@@ -221,11 +224,8 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
         val isBracedBlock = isLeftBrace(block.tokens.dropWhile(t => isWhitespace(t)).head)
 
         if (!isBracedBlock || !isInControlStructure) {
-          addEndMarkerMethod(block.parent.get)
+          Patch.empty
         } else {
-          val tokenList = splitOn(block.tokens.tokens, "\n")
-          tokenList.foreach(l => l.foreach(t => println(t, t.getClass())))
-
           val leftBrace  = block.tokens.find(t => isLeftBrace(t)).get
           val rightBrace = block.tokens.findLast(t => isRightBrace(t)).get
 
@@ -261,15 +261,13 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
             tokensToIndent = lines
           }
 
-          val addEndMarker = addEndMarkerMethod(block.parent.get) // move to different case
-
           val removeBraces = Patch.removeToken(leftBrace) + Patch.removeToken(rightBrace)
 
           // We assume that the last token in the block is the closing brace
           val whitespaceBeforeRightBrace = block.tokens.reverse.tail.takeWhile(isWhitespace)
           val removeWhitespaceBeforeRightBrace = Patch.removeTokens(whitespaceBeforeRightBrace)
 
-          Patch.fromIterable(patches) + addEndMarker + removeWhitespaceBeforeRightBrace + removeBraces
+          Patch.fromIterable(patches) + removeWhitespaceBeforeRightBrace + removeBraces
         }
       }.asPatch
   }
