@@ -15,6 +15,7 @@ object EndMarker_Test:
 
   extension (m: MyText)
     def myPrint = println(m.text)
+    end myPrint
   end extension
 
 

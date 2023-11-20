@@ -39,6 +39,7 @@ object IndentationSyntax_Test:
   end while
 
   val xs = List(1, 2, 3)
+  end xs
   for (x <- xs) 
       println("a")
       println("b")
@@ -46,10 +47,12 @@ object IndentationSyntax_Test:
 
   for (x <- xs) yield 
     val myFactor = 2
+    end myFactor
     myFactor * x
 
   object MyObject:
     override def toString(): String = "myObject"
+    end toString
   end MyObject
 
 end IndentationSyntax_Test

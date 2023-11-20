@@ -10,6 +10,11 @@ case class IndentationSyntaxParameters(
   skipEndMarkers: List[String],
   minLinesForEndMarker: Int,
 
+  // When to Use End Markers
+  // check docs!!!
+  // for stuff like checking for empty lines, we have to implement linesOfTree to get the lines corresponding to the tree
+  // then we will know whether there are empty lines and how many lines there are in total
+
   /* End markers supported:
     - object
     - class
@@ -49,28 +54,44 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
     
     def isMod(t: Token)         = t.isInstanceOf[scala.meta.tokens.Token.ModifierKeyword] || t.isInstanceOf[scala.meta.tokens.Token.KwCase]
 
+    def isVal(t: Token)         = t.isInstanceOf[scala.meta.tokens.Token.KwVal]
+    def isVar(t: Token)         = t.isInstanceOf[scala.meta.tokens.Token.KwVar]
+    def isDef(t: Token)         = t.isInstanceOf[scala.meta.tokens.Token.KwDef]
+    
+    def isGiven(t: Token)       = t.isInstanceOf[scala.meta.tokens.Token.KwGiven]
+
+    def isThis(t: Token)        = t.isInstanceOf[scala.meta.tokens.Token.KwThis]
+    def isNew(t: Token)         = t.isInstanceOf[scala.meta.tokens.Token.KwNew]
+    
+    
     // WHAT'S A "PACKAGE OBJECT" ???
     def isIf(t: Token)          = t.isInstanceOf[scala.meta.tokens.Token.KwIf]
     def isWhile(t: Token)       = t.isInstanceOf[scala.meta.tokens.Token.KwWhile]
+    def isTry(t: Token)         = t.isInstanceOf[scala.meta.tokens.Token.KwTry]
+
+    def isIdentifier(t: Token, name: String) = t.isInstanceOf[scala.meta.tokens.Token.Ident] && t.text == name
 
     def endMarkerSkipped(tree: Tree): Boolean = {
       tree match {
-        case _: Defn.Object      => params.skipEndMarkers.contains("object")
-        case _: Defn.Class       => params.skipEndMarkers.contains("class")
-        case _: Defn.Trait       => params.skipEndMarkers.contains("trait")
+        case _: Defn.Object       => params.skipEndMarkers.contains("object")
+        case _: Defn.Class        => params.skipEndMarkers.contains("class")
+        case _: Defn.Trait        => params.skipEndMarkers.contains("trait")
 
-        case _: Term.If          => params.skipEndMarkers.contains("if")
-        case _: Term.While       => params.skipEndMarkers.contains("while")
-        case _: Term.For         => params.skipEndMarkers.contains("for")
-        case _: Term.ForYield    => params.skipEndMarkers.contains("forYield")
-        case _: Term.Match       => params.skipEndMarkers.contains("match")
-        case _: Term.Try         => params.skipEndMarkers.contains("try")
-        case _: Term.New         => params.skipEndMarkers.contains("new")
-        case _: Term.This        => params.skipEndMarkers.contains("this")
-        case _: Decl.Val         => params.skipEndMarkers.contains("val")
-        case _: Decl.Given       => params.skipEndMarkers.contains("given")
+        case _: Term.If           => params.skipEndMarkers.contains("if")
+        case _: Term.While        => params.skipEndMarkers.contains("while")
+        case _: Term.For          => params.skipEndMarkers.contains("for")
+        case _: Term.ForYield     => params.skipEndMarkers.contains("forYield")
+        case _: Term.Match        => params.skipEndMarkers.contains("match")
+        case _: Term.Try          => params.skipEndMarkers.contains("try")
+        case _: Term.NewAnonymous => params.skipEndMarkers.contains("new")
+        case _: Ctor.Secondary    => params.skipEndMarkers.contains("this")
+        case _: Defn.Val          => params.skipEndMarkers.contains("val")
+        case _: Defn.Var          => params.skipEndMarkers.contains("var")
+        case _: Defn.Def          => params.skipEndMarkers.contains("def")
+        
+        case _: Defn.GivenAlias => params.skipEndMarkers.contains("given")
 
-        case _ => false
+        case _                  => false
       }
     }
 
@@ -85,13 +106,24 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
 
         val lookFor = tree match {
           case defn: Stat.WithMods if !defn.mods.isEmpty => isMod _ 
-          case _: Defn.Object => isObject _
-          case _: Defn.Class => isClass _
-          case _: Defn.Trait => isTrait _
-          case _: Defn.ExtensionGroup => isExtension _
-          case _: Term.If => isIf _
-          case _: Term.While => isWhile _
-          case _ => throw new NotImplementedError("End markers for this syntactic structure are not implemented.")
+          case _: Defn.Object                            => isObject _
+          case _: Defn.Class                             => isClass _
+          case _: Defn.Trait                             => isTrait _
+          case _: Defn.ExtensionGroup                    => isExtension _
+          case _: Term.If                                => isIf _
+          case _: Term.While                             => isWhile _
+          case _: Term.Try                               => isTry _
+
+          case _: Defn.Val                               => isVal _
+          case _: Defn.Var                               => isVar _
+          case _: Defn.Def                               => isDef _
+          
+          case _: Defn.GivenAlias                        => isGiven _
+          case _: Term.NewAnonymous                      => isNew _
+          case _: Ctor.Secondary                         => isDef _ // secondary ctor definition starts with the "def" keyword
+          case matchTerm: Term.Match                     => isIdentifier(_, matchTerm.expr.toString()) // match expression starts with an identifier
+          
+          case _                                         => throw new NotImplementedError("End markers for this syntactic structure are not implemented.")
         }
 
         val keyword = tree.tokens.find(lookFor).getOrElse(throw new Exception("The given tree doesn't contain its defining keyword."))
@@ -107,12 +139,36 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
           case _: Term.Match => "match"
           
           case _: Term.Try => "try"
-          case _: Term.New => "new"
+          case _: Term.NewAnonymous => "new"
           // case _: Term.This => "this"
-          // case _: Ctor.Secondary => "this"
-          case _: Decl.Val => "val"
-          case n: Decl.Given if n.isNameAnonymous => "given"
+          
+          case valTree: Defn.Val => valTree.pats.head match {
+            case pat: Pat.Var => pat.name.value
+            case _            => "val"
+          }
+
+          case varTree: Defn.Var => varTree.pats.head match {
+            case pat: Pat.Var => pat.name.value
+            case _            => "var"
+          }
+          
+          case givenTree: Defn.GivenAlias => givenTree.name match {
+            case _: Name.Anonymous => "given"
+            case n: Name => n.value
+          }
+
           case _: Defn.ExtensionGroup => "extension"
+
+          case defTree: Defn.Def => defTree.name match {
+            case _: Name.Anonymous => "def"
+            case n: Name => n.value
+          }
+
+          // case _: Ctor.Secondary => "this"
+          case ctorTree: Ctor.Secondary => ctorTree.name match {
+            case _: Name.This => "this"
+            case n: Name => n.value
+          }
           
           case member: scala.meta.Member => member.name // test if it returns THIS for secondary constructor
         }
@@ -175,12 +231,10 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
         }
       }
 
-      val indents = pack(tokens).map(l => (l.size, convertToIndentationCharacter(l.head)))
+      val indents = pack(tokens.map(convertToIndentationCharacter)).map(l => (l.size, l.head))
 
       RLEIndent(indents)
     }
-
-    // val trial = RLEIndent(List((2, Tab), (4, Space), (1, Empty)))
 
     @tailrec
     def splitOnTail[T](l: Seq[T], acc: Seq[Seq[T]], predicate: T => Boolean): Seq[Seq[T]] = {
@@ -207,14 +261,21 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
 
     var patches = Nil
     */
-    val tokenList = splitOn(doc.tree.tokens.tokens, "\n")
-    tokenList.foreach(line => line.foreach(t => println(s"\"$t\", ${t.getClass().getCanonicalName()}")))
+    val docLines = splitOn(doc.tree.tokens.tokens, "\n")
+    // docLines.foreach(line => line.foreach(token => println(s"\"$token\", ${token.getClass().getCanonicalName()}")))
+
+    var endMarkerPatches: List[Patch] = Nil
 
     doc.tree.collect {
-      case controlStructureTree @ (_: Term.If | _: Term.While) => 
-        addEndMarkerMethod(controlStructureTree)
-      case containingTemplateTree @ (_: Defn.Object | _: Defn.Class | _: Defn.Trait | _: Defn.ExtensionGroup) => 
-        addEndMarkerMethod(containingTemplateTree)
+      case controlStructureTree @ (_: Term.If | _: Term.While | _: Term.Try | _: Term.Match) => 
+        endMarkerPatches = addEndMarkerMethod(controlStructureTree) :: endMarkerPatches
+        Patch.empty
+      case defnTree @ (_: Defn.Val | _: Defn.Var | _: Defn.Def | _: Defn.GivenAlias | _: Term.NewAnonymous) => 
+        endMarkerPatches = addEndMarkerMethod(defnTree) :: endMarkerPatches
+        Patch.empty
+      case containingTemplateTree @ (_: Defn.Object | _: Defn.Class | _: Defn.Trait | _: Defn.ExtensionGroup | _: Ctor.Secondary) => 
+        endMarkerPatches = addEndMarkerMethod(containingTemplateTree) :: endMarkerPatches
+        Patch.empty
       case template: Template => 
         val isBracedBlock = isLeftBrace(template.tokens.dropWhile(t => isWhitespace(t)).head)
         if (!isBracedBlock) {
@@ -269,7 +330,7 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
         // and we have nothing to do
 
         // the first non-whitespace token after the start of the block is {
-        val isBracedBlock = isLeftBrace(block.tokens.dropWhile(t => isWhitespace(t)).head)
+        val isBracedBlock = !block.tokens.isEmpty && isLeftBrace(block.tokens.dropWhile(t => isWhitespace(t)).head)
 
         if (!isBracedBlock || !isInControlStructure) {
           Patch.empty
@@ -317,6 +378,7 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
 
           Patch.fromIterable(patches) + removeWhitespaceBeforeRightBrace + removeBraces
         }
-      }.asPatch
+      }.asPatch + Patch.fromIterable(endMarkerPatches)
   }
+
 }
