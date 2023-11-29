@@ -61,39 +61,10 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
       }
     }
 
-    def addEndMarkerMethod(tree: Tree): Patch = {
+    def getEndMarker(tree: Tree): Option[String] = {
       if (!params.addEndMarkers || endMarkerSkipped(tree)) {
-        Patch.empty
+        None
       } else {
-        val lastToken = tree.tokens.last
-
-        val lookFor = tree match {
-          case defn: Stat.WithMods if !defn.mods.isEmpty => isMod _ 
-          case _: Defn.Object                            => isObject _
-          case _: Defn.Class                             => isClass _
-          case _: Defn.Trait                             => isTrait _
-          case _: Defn.ExtensionGroup                    => isExtension _
-          case _: Term.If                                => isIf _
-          case _: Term.While                             => isWhile _
-          case _: Term.Try                               => isTry _
-
-          case _: Defn.Val                               => isVal _
-          case _: Defn.Var                               => isVar _
-          case _: Defn.Def                               => isDef _
-          
-          case _: Defn.GivenAlias                        => isGiven _
-          case _: Term.NewAnonymous                      => isNew _
-          case _: Ctor.Secondary                         => isDef _ // secondary ctor definition starts with the "def" keyword
-          case matchTerm: Term.Match                     => isIdentifier(_, matchTerm.expr.toString()) // match expression starts with an identifier
-          
-          case _                                         => throw new NotImplementedError("End markers for this syntactic structure are not implemented.")
-        }
-
-        val keyword = tree.tokens.find(lookFor).getOrElse(throw new Exception("The given tree doesn't contain its defining keyword."))
-        def isBeforeKeyword(t: Token) = t.end <= keyword.start
-        val whitespaceBeforeKeyword = tree.tokens.tokens.filter(isBeforeKeyword).reverse.takeWhile(isHSpace)
-        val indentationLevel = whitespaceBeforeKeyword.size
-
         val endMarkerName = tree match {
           case _: Term.If => "if"
           case _: Term.While => "while"
@@ -136,10 +107,9 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
           case member: scala.meta.Member => member.name // test if it returns THIS for secondary constructor
         }
 
-        val stringToAdd = "\n" + " " * indentationLevel + "end " + endMarkerName
-        val endMarker = Patch.addRight(lastToken, stringToAdd)
+        val stringToAdd = "end " + endMarkerName
 
-        endMarker
+        Some(stringToAdd)
       }
     }
     /*
@@ -255,17 +225,19 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
       (rleFromTokens(whitespace), remainingTokens)
     })
 
-    // println("*** START OF NEW DOCUMENT ***")
-    // indentsAndTokens.foreach(println)
+    println("*** START OF NEW DOCUMENT ***")
+    indentsAndTokens.foreach(println)
     /*
      * END OF SPLITTING INTO LINES (INDENTS AND TOKENS)
      */
 
+    val lineByToken: Map[Token, Int] = docLines.zipWithIndex.flatMap { case (tokens, index) => tokens.map(t => (t, index)) }.toMap
+    
     def linesFromTree(t: Tree) = {
       // returns subset of lines containing given tree
       val (from, to) = (t.tokens.head, t.tokens.last)
-      val firstLine = docLines.indexWhere(_ == from)
-      val lastLine = docLines.lastIndexWhere(_ == to)
+      val firstLine = lineByToken(from)
+      val lastLine = lineByToken(to)
 
       docLines.slice(firstLine, lastLine + 1)
     }
@@ -280,72 +252,65 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
     var patches = Nil
     */
 
-    // val linesByToken: Map[Token, Int] = ???
-    // val oldIndentationByLine: Seq[RLEIndent] = ???
-    // val newIndentationByLine: mutable.Seq[RLEIndent] = mutable.Seq(oldIndentationByLine: _*)
-
-    /*
-     * START PATCHES
-     */
-    val endMarkerPatches: List[Patch] = doc.tree.collect {
-      case controlStructureTree @ (_: Term.If | _: Term.While | _: Term.Try | _: Term.Match) => 
-        addEndMarkerMethod(controlStructureTree)
-      case defnTree @ (_: Defn.Val | _: Defn.Var | _: Defn.Def | _: Defn.GivenAlias | _: Term.NewAnonymous) => 
-        addEndMarkerMethod(defnTree)
-      case containingTemplateTree @ (_: Defn.Object | _: Defn.Class | _: Defn.Trait | _: Defn.ExtensionGroup | _: Ctor.Secondary) => 
-        addEndMarkerMethod(containingTemplateTree)
-    }.reverse
+    // old is for comparison
+    val oldIndentationByLine: Seq[RLEIndent] = indentsAndTokens.map(_._1)
+    // new is correct
+    val newIndentationByLine: mutable.Seq[RLEIndent] = mutable.Seq(oldIndentationByLine: _*)
 
     // TODO: think of something more clever
     def isBraced(t: Tree) = t.tokens.exists(isLeftBrace) && t.tokens.exists(isRightBrace)
+    // pattern match
+    // if it's a template, find the { before the "self" 
+    // it it's a catch tree, find the first { after "catch" and before the first case (if "catch" exists)
+    // if it's an "enums" list inside a for-expression, find the first { after the "for" and before the first enumerator
 
     val bracePatches = doc.tree.collect {
-      case template: Template if isBraced(template) =>
-        val leftBrace = template.parent.get.tokens.find(isLeftBrace).get
-        val rightBrace = template.parent.get.tokens.findLast(isRightBrace).get
+      case templateOrBlock @ (_: Template | _: Term.Block) if isBraced(templateOrBlock) => {
+
+        // don't remove braces on all blocks!
+        // special cases:
+        // check if it's not in Term.ArgClause
+        // check if the parent is not a block
+        val leftBrace = templateOrBlock.parent.get.tokens.find(isLeftBrace).get
+        val rightBrace = templateOrBlock.parent.get.tokens.findLast(isRightBrace).get
 
         def isBeforeLeftBrace(t: Token) = t.end <= leftBrace.start
         def isBeforeRightBrace(t: Token) = t.end <= rightBrace.start
         
-        val tokensBeforeLeftBrace = template.parent.get.tokens.takeWhile(isBeforeLeftBrace)
-        val whitespaceBeforeLeftBrace = tokensBeforeLeftBrace.takeRightWhile(isWhitespace)
-        val tokensBeforeRightBrace = template.parent.get.tokens.takeWhile(isBeforeRightBrace)
-        val whitespaceBeforeRightBrace = tokensBeforeRightBrace.takeRightWhile(isWhitespace)
+        val tokensBeforeLeftBrace = templateOrBlock.parent.get.tokens.takeWhile(isBeforeLeftBrace)
+        val whitespaceBeforeLeftBrace = tokensBeforeLeftBrace.takeRightWhile(isWhitespace) 
 
         val removeWhitespaceBeforeLeftBrace = Patch.removeTokens(whitespaceBeforeLeftBrace)
-        val replaceLeftBraceWithColon = Patch.replaceToken(leftBrace, ":")
-        val removeWhitespaceBeforeRightBrace = Patch.removeTokens(whitespaceBeforeRightBrace)
-        val removeRightBrace = Patch.removeToken(rightBrace)
+        val removeLeftBrace = templateOrBlock match {
+          case _: Template   => Patch.replaceToken(leftBrace, ":")
+          case _: Term.Block => Patch.removeToken(leftBrace)
+          case _             => throw new Exception("The given tree is not a template body or a block.")
+        }       
 
-        removeWhitespaceBeforeLeftBrace + replaceLeftBraceWithColon + removeWhitespaceBeforeRightBrace + removeRightBrace
+        val removeRightBrace = getEndMarker(templateOrBlock) match {
+          case Some(endMarker) => Patch.replaceToken(rightBrace, endMarker)
+          case None =>
 
-      case block: Term.Block if isBraced(block) => 
-        val leftBrace = block.parent.get.tokens.find(isLeftBrace).get
-        val rightBrace = block.parent.get.tokens.findLast(isRightBrace).get
+            val tokensBeforeRightBrace = templateOrBlock.parent.get.tokens.takeWhile(isBeforeRightBrace)
+            val whitespaceBeforeRightBrace = tokensBeforeRightBrace.takeRightWhile(isHSpace)
+            Patch.removeTokens(whitespaceBeforeRightBrace :+ rightBrace)
+        }
 
-        def isBeforeLeftBrace(t: Token) = t.end <= leftBrace.start
-        def isBeforeRightBrace(t: Token) = t.end <= rightBrace.start
-        
-        val tokensBeforeLeftBrace = block.parent.get.tokens.takeWhile(isBeforeLeftBrace)
-        val whitespaceBeforeLeftBrace = tokensBeforeLeftBrace.takeRightWhile(isWhitespace)
-        val tokensBeforeRightBrace = block.parent.get.tokens.takeWhile(isBeforeRightBrace)
-        val whitespaceBeforeRightBrace = tokensBeforeRightBrace.takeRightWhile(isWhitespace)
 
-        val removeWhitespaceBeforeLeftBrace = Patch.removeTokens(whitespaceBeforeLeftBrace)
-        val removeLeftBrace = Patch.removeToken(leftBrace)
-        val removeWhitespaceBeforeRightBrace = Patch.removeTokens(whitespaceBeforeRightBrace)
-        val removeRightBrace = Patch.removeToken(rightBrace)
+        // mutate newIndentationByLine
 
-        removeWhitespaceBeforeLeftBrace + removeLeftBrace + removeWhitespaceBeforeRightBrace + removeRightBrace
-      
+        removeWhitespaceBeforeLeftBrace + removeLeftBrace + removeRightBrace
+      }
+      case _: Term.Match => Patch.empty // x match { } find the braces
+      case _: Term.Try => Patch.empty // look for {} after "catch" and before "finally" if it exists. Everything else is a block.
       case _ => Patch.empty
     }
 
-    val computeIndentationPatches = doc.tree.collect {
-      case _ => Patch.empty
-    }
+    val computeIndentationPatches = 
+      // generate patches from old VS new
+      List(Patch.empty)
     
-    bracePatches.asPatch + endMarkerPatches.asPatch ++ computeIndentationPatches
+    computeIndentationPatches.asPatch + bracePatches.asPatch
     /*
      * END PATCHES
      */

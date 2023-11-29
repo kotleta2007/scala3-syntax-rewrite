@@ -26,7 +26,7 @@ object IndentationSyntax_Test {
     println("c")
   }
 
-  if (true) 
+  if (true)
     println("a")
     println("b")
     println("c")
