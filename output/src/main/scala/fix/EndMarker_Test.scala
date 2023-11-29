@@ -1,11 +1,11 @@
 package fix
 
 object EndMarker_Test:
-  if (true) 
+  if (true)
     println(true)
   end if
 
-  class MyNumber(number: Int):
+  class MyNumber(number: Int) extends AnyRef:
     println(number)
   end MyNumber
 
@@ -17,6 +17,4 @@ object EndMarker_Test:
     def myPrint = println(m.text)
     end myPrint
   end extension
-
-
 end EndMarker_Test

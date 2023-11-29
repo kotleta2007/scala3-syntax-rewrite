@@ -5,6 +5,7 @@ import scala.meta._
 import metaconfig.Configured
 import scala.annotation.tailrec
 import scala.collection.mutable
+import com.google.protobuf.Empty
 
 case class IndentationSyntaxParameters(
   addEndMarkers: Boolean,
@@ -33,41 +34,9 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
     config.conf.getOrElse("IndentationSyntax")(this.params).map(newParams => new IndentationSyntax(newParams))
   
   override def fix(implicit doc: SyntacticDocument): Patch = {
-    def isLeftBrace(t: Token)   = t.isInstanceOf[scala.meta.tokens.Token.LeftBrace]
-    def isRightBrace(t: Token)  = t.isInstanceOf[scala.meta.tokens.Token.RightBrace]
-
-    def isHSpace(t: Token)      = t.isInstanceOf[scala.meta.tokens.Token.HSpace]       // Space, Tab
-    def isNewLine(t: Token)     = t.isInstanceOf[scala.meta.tokens.Token.AtEOL]        // CR, LF, FF
-    def isSpace(t: Token)       = t.isInstanceOf[scala.meta.tokens.Token.Space]        // Space
-    def isWhitespace(t: Token)  = t.isInstanceOf[scala.meta.tokens.Token.Whitespace]   // HSpace, AtEOL
-
-    // isKeyword for end markers
-    def isObject(t: Token)      = t.isInstanceOf[scala.meta.tokens.Token.KwObject]
-    def isClass(t: Token)       = t.isInstanceOf[scala.meta.tokens.Token.KwClass]
-    def isTrait(t: Token)       = t.isInstanceOf[scala.meta.tokens.Token.KwTrait]
-    def isPackage(t: Token)     = t.isInstanceOf[scala.meta.tokens.Token.KwPackage]
-    def isExtension(t: Token)   = t.isInstanceOf[scala.meta.tokens.Token.Ident] && t.text == "extension"
-    
-    // mod or case
-    def isMod(t: Token)         = t.isInstanceOf[scala.meta.tokens.Token.ModifierKeyword] || t.isInstanceOf[scala.meta.tokens.Token.KwCase]
-
-    def isVal(t: Token)         = t.isInstanceOf[scala.meta.tokens.Token.KwVal]
-    def isVar(t: Token)         = t.isInstanceOf[scala.meta.tokens.Token.KwVar]
-    def isDef(t: Token)         = t.isInstanceOf[scala.meta.tokens.Token.KwDef]
-    
-    def isGiven(t: Token)       = t.isInstanceOf[scala.meta.tokens.Token.KwGiven]
-
-    def isThis(t: Token)        = t.isInstanceOf[scala.meta.tokens.Token.KwThis]
-    def isNew(t: Token)         = t.isInstanceOf[scala.meta.tokens.Token.KwNew]
-    
-    
-    // WHAT'S A "PACKAGE OBJECT" ???
-    def isIf(t: Token)          = t.isInstanceOf[scala.meta.tokens.Token.KwIf]
-    def isWhile(t: Token)       = t.isInstanceOf[scala.meta.tokens.Token.KwWhile]
-    def isTry(t: Token)         = t.isInstanceOf[scala.meta.tokens.Token.KwTry]
-
-    def isIdentifier(t: Token, name: String) = t.isInstanceOf[scala.meta.tokens.Token.Ident] && t.text == name
-
+    /*
+     * START OF END MARKERS
+     */
     def endMarkerSkipped(tree: Tree): Boolean = {
       tree match {
         case _: Defn.Object       => params.skipEndMarkers.contains("object")
@@ -97,9 +66,6 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
         Patch.empty
       } else {
         val lastToken = tree.tokens.last
-
-        // if tree already has an end marker, don't add it!
-        // ideally, we wouldn't have to check for this
 
         val lookFor = tree match {
           case defn: Stat.WithMods if !defn.mods.isEmpty => isMod _ 
@@ -176,13 +142,18 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
         endMarker
       }
     }
+    /*
+     * END OF END MARKERS
+     */
 
+    /*
+     * START OF RLE INDENT
+     */
     sealed trait IndentationCharacter
 
     case object Space extends IndentationCharacter
     case object Tab extends IndentationCharacter
 
-    // type RLEIndent = List[(Int, IndentationCharacter)]
     case class RLEIndent(indents: List[(Int, IndentationCharacter)]) {
       def < (that: RLEIndent): Boolean = {
         (this, that) match {
@@ -233,8 +204,37 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
       RLEIndent(indents)
     }
 
-    def rleFromString = ???
+    def rleFromString(s: String): RLEIndent = {
+      def pack[T](xs: Seq[T]): List[List[T]] = {
+        xs match {
+          case Nil => Nil
+          case head :: next =>
+            val (same, rest) = next.span(_ == head)
+            (head :: same) :: pack(rest)
+        }
+      }
 
+      def convertToIndentationCharacter(character: Char): IndentationCharacter = {
+        character match {
+          case _: ' '  => Space
+          case _: '\t' => Tab
+          case _       => throw new Exception("The given character is not HSpace (not a space or a tab).")
+        }
+      }
+
+      val indents = pack(s.toList.map(convertToIndentationCharacter)).map(l => (l.size, l.head))
+
+      RLEIndent(indents)
+    }
+
+    val defaultIndentation = rleFromString(params.defaultIndentation)
+    /*
+     * END OF RLE INDENT
+     */
+
+    /*
+     * START OF SPLITTING INTO LINES (INDENTS AND TOKENS)
+     */
     @tailrec
     def splitOnTail[T](l: Seq[T], acc: Seq[Seq[T]], predicate: T => Boolean): Seq[Seq[T]] = {
       val (left, right) = l.span((n: T) => !predicate(n))
@@ -242,17 +242,34 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
       else splitOnTail(right.tail, (left :+ right.head) +: acc, predicate)
     }
     
-    // maybe use collection.mutable.Seq ???
     def splitOn(l: Seq[Token], delimiter: String) = {
       val split = splitOnTail(l, Seq.empty, ((x: Token) => x.text == delimiter))
 
       if (split.last == Seq.empty) split.init else split
     }
+    
+    val docLines: Seq[Seq[Token]] = splitOn(doc.tree.tokens.tokens, "\n")
+    val indentsAndTokens = docLines.map(line => {
+      val (whitespace, remainingTokens) = line.span(isHSpace)
 
-    // subset of lines containing given tree
-    // def linesFromTree(t: Tree)
+      (rleFromTokens(whitespace), remainingTokens)
+    })
 
-    // CHECK IF-THEN-ELSE, both for indentation and 
+    // println("*** START OF NEW DOCUMENT ***")
+    // indentsAndTokens.foreach(println)
+    /*
+     * END OF SPLITTING INTO LINES (INDENTS AND TOKENS)
+     */
+
+    def linesFromTree(t: Tree) = {
+      // returns subset of lines containing given tree
+      val (from, to) = (t.tokens.head, t.tokens.last)
+      val firstLine = docLines.indexWhere(_ == from)
+      val lastLine = docLines.lastIndexWhere(_ == to)
+
+      docLines.slice(firstLine, lastLine + 1)
+    }
+
     /*
     val lines: DocLines: List[Array[Token]] = ??? // compute lines
 
@@ -260,24 +277,17 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
     val line: Int = lines.get(innerToken)
     val indent: RLEIndent = lines.getIndent(line)
 
-
     var patches = Nil
     */
-    val linesByToken: Map[Token, Int] = ???
-    val oldIndentationByLine: Seq[RLEIndent] = ???
-    val newIndentationByLine: mutable.Seq[RLEIndent] = mutable.Seq(oldIndentationByLine: _*)
 
-    val docLines: Seq[Seq[Token]] = splitOn(doc.tree.tokens.tokens, "\n")
-    val indentedLine = docLines.map(line => {
-      val (whitespace, remainingTokens) = line.span(isHSpace)
+    // val linesByToken: Map[Token, Int] = ???
+    // val oldIndentationByLine: Seq[RLEIndent] = ???
+    // val newIndentationByLine: mutable.Seq[RLEIndent] = mutable.Seq(oldIndentationByLine: _*)
 
-      (rleFromTokens(whitespace), remainingTokens)
-    })
-    // docLines.foreach(line => line.foreach(token => println(s"\"$token\", ${token.getClass().getCanonicalName()}, ${isHSpace(token)}")))
-    indentedLine.foreach(println)
-
+    /*
+     * START PATCHES
+     */
     val endMarkerPatches: List[Patch] = doc.tree.collect {
-      // end markers
       case controlStructureTree @ (_: Term.If | _: Term.While | _: Term.Try | _: Term.Match) => 
         addEndMarkerMethod(controlStructureTree)
       case defnTree @ (_: Defn.Val | _: Defn.Var | _: Defn.Def | _: Defn.GivenAlias | _: Term.NewAnonymous) => 
@@ -286,118 +296,98 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
         addEndMarkerMethod(containingTemplateTree)
     }.reverse
 
+    // TODO: think of something more clever
+    def isBraced(t: Tree) = t.tokens.exists(isLeftBrace) && t.tokens.exists(isRightBrace)
+
     val bracePatches = doc.tree.collect {
-      case template: Template => 
-        val isBracedBlock = isLeftBrace(template.tokens.dropWhile(t => isWhitespace(t)).head)
-        if (!isBracedBlock) {
-          Patch.empty
-        } else {
-          val leftBrace  = template.tokens.find(t => isLeftBrace(t)).get
-          val rightBrace = template.tokens.findLast(t => isRightBrace(t)).get
+      case template: Template if isBraced(template) =>
+        val leftBrace = template.parent.get.tokens.find(isLeftBrace).get
+        val rightBrace = template.parent.get.tokens.findLast(isRightBrace).get
 
-          // remove HSpace inside the template (between the "extends" clauses and the left brace)
-          def isBeforeLeftBrace(t: Token) = t.end <= leftBrace.start
-          val HSpaceBeforeLeftBrace = template.tokens.reverse.filter(t => isBeforeLeftBrace(t)).takeWhile(t => isHSpace(t) && isBeforeLeftBrace(t))
-          val removeHSpaceBeforeLeftBrace = Patch.removeTokens(HSpaceBeforeLeftBrace)
+        def isBeforeLeftBrace(t: Token) = t.end <= leftBrace.start
+        def isBeforeRightBrace(t: Token) = t.end <= rightBrace.start
+        
+        val tokensBeforeLeftBrace = template.parent.get.tokens.takeWhile(isBeforeLeftBrace)
+        val whitespaceBeforeLeftBrace = tokensBeforeLeftBrace.takeRightWhile(isWhitespace)
+        val tokensBeforeRightBrace = template.parent.get.tokens.takeWhile(isBeforeRightBrace)
+        val whitespaceBeforeRightBrace = tokensBeforeRightBrace.takeRightWhile(isWhitespace)
 
-          // remove HSpace between the ctor (constructor arguments) and the start of the template
-          val removeHSpaceinParent = template.parent match {
-            case Some(parentTree) =>
-              def isBeforeTemplate(t: Token) = t.end <= template.pos.start
-              val HSpaceBeforeTemplate = parentTree.tokens.reverse.filter(t => isBeforeTemplate(t)).takeWhile(t => isHSpace(t) && isBeforeTemplate(t))
+        val removeWhitespaceBeforeLeftBrace = Patch.removeTokens(whitespaceBeforeLeftBrace)
+        val replaceLeftBraceWithColon = Patch.replaceToken(leftBrace, ":")
+        val removeWhitespaceBeforeRightBrace = Patch.removeTokens(whitespaceBeforeRightBrace)
+        val removeRightBrace = Patch.removeToken(rightBrace)
 
-              val removeHSpaceBeforeTemplate = Patch.removeTokens(HSpaceBeforeTemplate)
-              
-              removeHSpaceBeforeTemplate
-            case None => Patch.empty
-          }
+        removeWhitespaceBeforeLeftBrace + replaceLeftBraceWithColon + removeWhitespaceBeforeRightBrace + removeRightBrace
 
-          val replaceLeftBraceWithColon = Patch.replaceToken(leftBrace, ":")
-          val removeRightBrace = Patch.removeToken(rightBrace)
+      case block: Term.Block if isBraced(block) => 
+        val leftBrace = block.parent.get.tokens.find(isLeftBrace).get
+        val rightBrace = block.parent.get.tokens.findLast(isRightBrace).get
 
-          // We assume that the last token in the block is the closing brace
-          val whitespaceBeforeRightBrace = template.tokens.reverse.tail.takeWhile(isHSpace)
-          val removeWhitespaceBeforeRightBrace = Patch.removeTokens(whitespaceBeforeRightBrace)
+        def isBeforeLeftBrace(t: Token) = t.end <= leftBrace.start
+        def isBeforeRightBrace(t: Token) = t.end <= rightBrace.start
+        
+        val tokensBeforeLeftBrace = block.parent.get.tokens.takeWhile(isBeforeLeftBrace)
+        val whitespaceBeforeLeftBrace = tokensBeforeLeftBrace.takeRightWhile(isWhitespace)
+        val tokensBeforeRightBrace = block.parent.get.tokens.takeWhile(isBeforeRightBrace)
+        val whitespaceBeforeRightBrace = tokensBeforeRightBrace.takeRightWhile(isWhitespace)
 
-          removeHSpaceinParent + removeHSpaceBeforeLeftBrace + replaceLeftBraceWithColon + removeWhitespaceBeforeRightBrace + removeRightBrace
-        }
+        val removeWhitespaceBeforeLeftBrace = Patch.removeTokens(whitespaceBeforeLeftBrace)
+        val removeLeftBrace = Patch.removeToken(leftBrace)
+        val removeWhitespaceBeforeRightBrace = Patch.removeTokens(whitespaceBeforeRightBrace)
+        val removeRightBrace = Patch.removeToken(rightBrace)
 
-      case block @ (_: Term.Block | _: Term.Try | _: Term.Match) => 
-        // later can be removed
-        // if we have a block (not cases), the rule only applies to control structures
-        val isInControlStructure = if (!block.isInstanceOf[Term.Block]) true else block.parent match {
-          case Some(tree) => tree match {
-            case Term.If(_,_,_) | Term.While(_,_) => true
-            case Term.For(_, _) => true
-            case Term.ForYield(_, _) => true
-            // add val, var, def
-            case _ => false
-          }
-          case None => false
-        }
-
-        // if there is no { at the start of the block,
-        // assume that block is properly indented 
-        // (according to the rules of significant indentation)
-        // and we have nothing to do
-
-        // the first non-whitespace token after the start of the block is {
-        val isBracedBlock = !block.tokens.isEmpty && isLeftBrace(block.tokens.dropWhile(t => isWhitespace(t)).head)
-
-        if (!isBracedBlock || !isInControlStructure) {
-          Patch.empty
-        } else {
-          val leftBrace  = block.tokens.find(t => isLeftBrace(t)).get
-          val rightBrace = block.tokens.findLast(t => isRightBrace(t)).get
-
-          // calculate the indentation level of the first line
-          def isAfterLeftBrace(t: Token) = t.start >= leftBrace.end
-          block.parent.get.tokens.head
-          val firstIndentedToken = block.tokens.find(t => isAfterLeftBrace(t) && !isWhitespace(t)).get
-          val newLineAfterLeftBrace = block.tokens.find(t => isAfterLeftBrace(t) && isNewLine(t)).get
-          val firstIndentationLevel = firstIndentedToken.start - newLineAfterLeftBrace.end
-          // println("Indentation level for this block:", firstIndentationLevel)
-
-          // If there is no indentation (=0), set it to the indentation of the parent+1 indentation (2 spaces or tab)
-
-          // match the indentation on all subsequent levels
-          def isAfterFirstIndentedToken(t: Token) = t.start >= firstIndentedToken.end
-          val newLineAfterFirstLine = block.tokens.find(t => isNewLine(t) && isAfterFirstIndentedToken(t)).get
-          def isFromSecondLine(t: Token) = t.start >= newLineAfterFirstLine.end
-
-          var tokensToIndent = block.tokens.filter(t => isFromSecondLine(t) && !isRightBrace(t))
-          var patches: List[Patch] = Nil
-          
-          // while (!tokensToIndent.isEmpty) {
-          while (tokensToIndent.exists(isNewLine)) {
-            var (line, lines) = tokensToIndent.span(t => !isNewLine(t))
-            // move the newLine to the tokens of the current line
-            line  = line :+ lines.head
-            lines = lines.tail
-
-            val (whitespaceToRemove, tokensOnLine) = line.span(t => isSpace(t))
-            
-            patches = Patch.removeTokens(whitespaceToRemove) :: patches
-            patches = Patch.addLeft(tokensOnLine.head, " " * firstIndentationLevel) :: patches
-
-            tokensToIndent = lines
-          }
-
-          val removeBraces = Patch.removeToken(leftBrace) + Patch.removeToken(rightBrace)
-
-          // We assume that the last token in the block is the closing brace
-          val whitespaceBeforeRightBrace = block.tokens.reverse.tail.takeWhile(isWhitespace)
-          val removeWhitespaceBeforeRightBrace = Patch.removeTokens(whitespaceBeforeRightBrace)
-
-          Patch.fromIterable(patches) + removeWhitespaceBeforeRightBrace + removeBraces
-        }
-      }
+        removeWhitespaceBeforeLeftBrace + removeLeftBrace + removeWhitespaceBeforeRightBrace + removeRightBrace
+      
+      case _ => Patch.empty
+    }
 
     val computeIndentationPatches = doc.tree.collect {
       case _ => Patch.empty
     }
-      
+    
     bracePatches.asPatch + endMarkerPatches.asPatch ++ computeIndentationPatches
+    /*
+     * END PATCHES
+     */
   }
 
+  /*
+   * START OF HELPER FUNCTIONS (TOKEN PREDICATES)
+   */
+  def isLeftBrace(t: Token)   = t.isInstanceOf[scala.meta.tokens.Token.LeftBrace]
+  def isRightBrace(t: Token)  = t.isInstanceOf[scala.meta.tokens.Token.RightBrace]
+
+  def isHSpace(t: Token)      = t.isInstanceOf[scala.meta.tokens.Token.HSpace]       // Space, Tab
+  def isNewLine(t: Token)     = t.isInstanceOf[scala.meta.tokens.Token.AtEOL]        // CR, LF, FF
+  def isSpace(t: Token)       = t.isInstanceOf[scala.meta.tokens.Token.Space]        // Space
+  def isWhitespace(t: Token)  = t.isInstanceOf[scala.meta.tokens.Token.Whitespace]   // HSpace, AtEOL
+
+  def isObject(t: Token)      = t.isInstanceOf[scala.meta.tokens.Token.KwObject]
+  def isClass(t: Token)       = t.isInstanceOf[scala.meta.tokens.Token.KwClass]
+  def isTrait(t: Token)       = t.isInstanceOf[scala.meta.tokens.Token.KwTrait]
+  def isPackage(t: Token)     = t.isInstanceOf[scala.meta.tokens.Token.KwPackage]
+  def isExtension(t: Token)   = t.isInstanceOf[scala.meta.tokens.Token.Ident] && t.text == "extension"
+  def isMod(t: Token)         = t.isInstanceOf[scala.meta.tokens.Token.ModifierKeyword] || t.isInstanceOf[scala.meta.tokens.Token.KwCase]
+  def isVal(t: Token)         = t.isInstanceOf[scala.meta.tokens.Token.KwVal]
+  def isVar(t: Token)         = t.isInstanceOf[scala.meta.tokens.Token.KwVar]
+  def isDef(t: Token)         = t.isInstanceOf[scala.meta.tokens.Token.KwDef]
+  def isGiven(t: Token)       = t.isInstanceOf[scala.meta.tokens.Token.KwGiven]
+  def isThis(t: Token)        = t.isInstanceOf[scala.meta.tokens.Token.KwThis]
+  def isNew(t: Token)         = t.isInstanceOf[scala.meta.tokens.Token.KwNew]
+  def isIf(t: Token)          = t.isInstanceOf[scala.meta.tokens.Token.KwIf]
+  def isWhile(t: Token)       = t.isInstanceOf[scala.meta.tokens.Token.KwWhile]
+  def isTry(t: Token)         = t.isInstanceOf[scala.meta.tokens.Token.KwTry]
+  def isIdentifier(t: Token, name: String) = t.isInstanceOf[scala.meta.tokens.Token.Ident] && t.text == name
+  /*
+   * END OF HELPER FUNCTIONS (TOKEN PREDICATES)
+   */
+
+  /* a note regarding templates and package objects
+
+  A template defines the type signature, behavior and initial state of a trait or class of objects or of a single object. 
+  https://www.scala-lang.org/files/archive/spec/3.4/05-classes-and-objects.html#templates
+
+  Also, package objects in Scalameta:
+  https://scalameta.org/docs/trees/quasiquotes.html
+  */
 }

@@ -10,8 +10,9 @@ object EndMarker_Test {
     println(true)
   }
 
-  class MyNumber(number: Int):
+  class MyNumber(number: Int) extends AnyRef {
     println(number)
+  }
 
   case class MyText(text: String):
     println(text)
