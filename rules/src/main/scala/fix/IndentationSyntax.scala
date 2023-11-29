@@ -4,26 +4,22 @@ import scalafix.v1._
 import scala.meta._
 import metaconfig.Configured
 import scala.annotation.tailrec
+import scala.collection.mutable
 
 case class IndentationSyntaxParameters(
   addEndMarkers: Boolean,
   skipEndMarkers: List[String],
   minLinesForEndMarker: Int,
+  defaultIndentation: String,
 
   // When to Use End Markers
   // check docs!!!
   // for stuff like checking for empty lines, we have to implement linesOfTree to get the lines corresponding to the tree
   // then we will know whether there are empty lines and how many lines there are in total
-
-  /* End markers supported:
-    - object
-    - class
-    - if
-  */
 )
 
 object IndentationSyntaxParameters {
-  val default = IndentationSyntaxParameters(false, Nil, 0)
+  val default = IndentationSyntaxParameters(false, Nil, 0, "  ")
   implicit val surface: metaconfig.generic.Surface[IndentationSyntaxParameters] = metaconfig.generic.deriveSurface[IndentationSyntaxParameters]
   implicit val decoder: metaconfig.ConfDecoder[IndentationSyntaxParameters] = metaconfig.generic.deriveDecoder(default)
 }
@@ -52,6 +48,7 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
     def isPackage(t: Token)     = t.isInstanceOf[scala.meta.tokens.Token.KwPackage]
     def isExtension(t: Token)   = t.isInstanceOf[scala.meta.tokens.Token.Ident] && t.text == "extension"
     
+    // mod or case
     def isMod(t: Token)         = t.isInstanceOf[scala.meta.tokens.Token.ModifierKeyword] || t.isInstanceOf[scala.meta.tokens.Token.KwCase]
 
     def isVal(t: Token)         = t.isInstanceOf[scala.meta.tokens.Token.KwVal]
@@ -231,10 +228,12 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
         }
       }
 
-      val indents = pack(tokens.map(convertToIndentationCharacter)).map(l => (l.size, l.head))
+      val indents = pack(tokens.toList.map(convertToIndentationCharacter)).map(l => (l.size, l.head))
 
       RLEIndent(indents)
     }
+
+    def rleFromString = ???
 
     @tailrec
     def splitOnTail[T](l: Seq[T], acc: Seq[Seq[T]], predicate: T => Boolean): Seq[Seq[T]] = {
@@ -244,11 +243,14 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
     }
     
     // maybe use collection.mutable.Seq ???
-    def splitOn[T](l: Seq[T], delimiter: T) = {
-      val split = splitOnTail(l, Seq.empty, ((x: T) => x == delimiter))
+    def splitOn(l: Seq[Token], delimiter: String) = {
+      val split = splitOnTail(l, Seq.empty, ((x: Token) => x.text == delimiter))
 
       if (split.last == Seq.empty) split.init else split
     }
+
+    // subset of lines containing given tree
+    // def linesFromTree(t: Tree)
 
     // CHECK IF-THEN-ELSE, both for indentation and 
     /*
@@ -261,21 +263,30 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
 
     var patches = Nil
     */
-    val docLines = splitOn(doc.tree.tokens.tokens, "\n")
-    // docLines.foreach(line => line.foreach(token => println(s"\"$token\", ${token.getClass().getCanonicalName()}")))
+    val linesByToken: Map[Token, Int] = ???
+    val oldIndentationByLine: Seq[RLEIndent] = ???
+    val newIndentationByLine: mutable.Seq[RLEIndent] = mutable.Seq(oldIndentationByLine: _*)
 
-    var endMarkerPatches: List[Patch] = Nil
+    val docLines: Seq[Seq[Token]] = splitOn(doc.tree.tokens.tokens, "\n")
+    val indentedLine = docLines.map(line => {
+      val (whitespace, remainingTokens) = line.span(isHSpace)
 
-    doc.tree.collect {
+      (rleFromTokens(whitespace), remainingTokens)
+    })
+    // docLines.foreach(line => line.foreach(token => println(s"\"$token\", ${token.getClass().getCanonicalName()}, ${isHSpace(token)}")))
+    indentedLine.foreach(println)
+
+    val endMarkerPatches: List[Patch] = doc.tree.collect {
+      // end markers
       case controlStructureTree @ (_: Term.If | _: Term.While | _: Term.Try | _: Term.Match) => 
-        endMarkerPatches = addEndMarkerMethod(controlStructureTree) :: endMarkerPatches
-        Patch.empty
+        addEndMarkerMethod(controlStructureTree)
       case defnTree @ (_: Defn.Val | _: Defn.Var | _: Defn.Def | _: Defn.GivenAlias | _: Term.NewAnonymous) => 
-        endMarkerPatches = addEndMarkerMethod(defnTree) :: endMarkerPatches
-        Patch.empty
+        addEndMarkerMethod(defnTree)
       case containingTemplateTree @ (_: Defn.Object | _: Defn.Class | _: Defn.Trait | _: Defn.ExtensionGroup | _: Ctor.Secondary) => 
-        endMarkerPatches = addEndMarkerMethod(containingTemplateTree) :: endMarkerPatches
-        Patch.empty
+        addEndMarkerMethod(containingTemplateTree)
+    }.reverse
+
+    val bracePatches = doc.tree.collect {
       case template: Template => 
         val isBracedBlock = isLeftBrace(template.tokens.dropWhile(t => isWhitespace(t)).head)
         if (!isBracedBlock) {
@@ -312,6 +323,7 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
         }
 
       case block @ (_: Term.Block | _: Term.Try | _: Term.Match) => 
+        // later can be removed
         // if we have a block (not cases), the rule only applies to control structures
         val isInControlStructure = if (!block.isInstanceOf[Term.Block]) true else block.parent match {
           case Some(tree) => tree match {
@@ -340,6 +352,7 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
 
           // calculate the indentation level of the first line
           def isAfterLeftBrace(t: Token) = t.start >= leftBrace.end
+          block.parent.get.tokens.head
           val firstIndentedToken = block.tokens.find(t => isAfterLeftBrace(t) && !isWhitespace(t)).get
           val newLineAfterLeftBrace = block.tokens.find(t => isAfterLeftBrace(t) && isNewLine(t)).get
           val firstIndentationLevel = firstIndentedToken.start - newLineAfterLeftBrace.end
@@ -378,7 +391,13 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
 
           Patch.fromIterable(patches) + removeWhitespaceBeforeRightBrace + removeBraces
         }
-      }.asPatch + Patch.fromIterable(endMarkerPatches)
+      }
+
+    val computeIndentationPatches = doc.tree.collect {
+      case _ => Patch.empty
+    }
+      
+    bracePatches.asPatch + endMarkerPatches.asPatch ++ computeIndentationPatches
   }
 
 }
