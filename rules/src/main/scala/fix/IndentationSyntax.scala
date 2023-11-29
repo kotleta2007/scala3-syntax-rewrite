@@ -149,6 +149,31 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
       def != (that: RLEIndent): Boolean = !(this == that)
       def > (that: RLEIndent):  Boolean = !(this <= that)
       def >= (that: RLEIndent): Boolean = !(this < that)
+
+      private def merge(a: (Int, IndentationCharacter), b: (Int, IndentationCharacter)): List[(Int, IndentationCharacter)] = {
+        if (a._2 == b._2) {
+          List((a._1 + b._1, a._2))
+        } else {
+          List(a, b)
+        }
+      }
+
+      def + (that: RLEIndent): RLEIndent = 
+        (this.indents, that.indents) match {
+          case (Nil, _) => that
+          case (_, Nil) => this
+          case (a, b) => RLEIndent(a.init ++ merge(a.last, b.head) ++ b.tail)
+        }
+      
+      def asString = {
+        def loop(l: List[(Int, IndentationCharacter)]): String = l match {
+          case Nil => ""
+          case (n, Space) :: next => " " * n + loop(next)
+          case (n, Tab) :: next => "\t" * n + loop(next)
+        }
+
+        loop(indents)
+      }
     }
 
     def rleFromTokens(tokens: Seq[Token]): RLEIndent = {
@@ -225,14 +250,15 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
       (rleFromTokens(whitespace), remainingTokens)
     })
 
-    println("*** START OF NEW DOCUMENT ***")
-    indentsAndTokens.foreach(println)
+    // println("*** START OF NEW DOCUMENT ***")
+    // indentsAndTokens.foreach(println)
     /*
      * END OF SPLITTING INTO LINES (INDENTS AND TOKENS)
      */
 
     val lineByToken: Map[Token, Int] = docLines.zipWithIndex.flatMap { case (tokens, index) => tokens.map(t => (t, index)) }.toMap
     
+
     def linesFromTree(t: Tree) = {
       // returns subset of lines containing given tree
       val (from, to) = (t.tokens.head, t.tokens.last)
@@ -257,6 +283,8 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
     // new is correct
     val newIndentationByLine: mutable.Seq[RLEIndent] = mutable.Seq(oldIndentationByLine: _*)
 
+    def indentationByToken(t: Token) = newIndentationByLine(lineByToken(t))
+
     // TODO: think of something more clever
     def isBraced(t: Tree) = t.tokens.exists(isLeftBrace) && t.tokens.exists(isRightBrace)
     // pattern match
@@ -275,6 +303,8 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
         val rightBrace = templateOrBlock.parent.get.tokens.findLast(isRightBrace).get
 
         def isBeforeLeftBrace(t: Token) = t.end <= leftBrace.start
+        def isAfterLeftBrace(t: Token) = t.start >= leftBrace.end
+        
         def isBeforeRightBrace(t: Token) = t.end <= rightBrace.start
         
         val tokensBeforeLeftBrace = templateOrBlock.parent.get.tokens.takeWhile(isBeforeLeftBrace)
@@ -287,7 +317,7 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
           case _             => throw new Exception("The given tree is not a template body or a block.")
         }       
 
-        val removeRightBrace = getEndMarker(templateOrBlock) match {
+        val removeRightBrace = getEndMarker(templateOrBlock.parent.get) match {
           case Some(endMarker) => Patch.replaceToken(rightBrace, endMarker)
           case None =>
 
@@ -298,7 +328,29 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
 
 
         // mutate newIndentationByLine
+        val firstToken = templateOrBlock.tokens.find(t => isAfterLeftBrace(t) && !isWhitespace(t)).get
+        val lastToken  = templateOrBlock.tokens.findLast(t => isBeforeRightBrace(t) && !isWhitespace(t)).get
 
+        val parentIndentation = indentationByToken(templateOrBlock.parent.get.tokens.head)
+        val insideIndentation = indentationByToken(firstToken)
+        
+        val correctIndentation = if (insideIndentation > parentIndentation) {
+          insideIndentation
+        } else {
+          parentIndentation + defaultIndentation
+        }
+
+        for (line <- lineByToken(firstToken).to(lineByToken(lastToken))) {
+          if (newIndentationByLine(line) < correctIndentation) {
+            newIndentationByLine(line) = correctIndentation
+          }
+        }
+
+        val rightBraceLine = lineByToken(rightBrace)
+        if (newIndentationByLine(rightBraceLine) != parentIndentation) {
+          newIndentationByLine(rightBraceLine) = parentIndentation
+        }
+        
         removeWhitespaceBeforeLeftBrace + removeLeftBrace + removeRightBrace
       }
       case _: Term.Match => Patch.empty // x match { } find the braces
@@ -308,7 +360,16 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
 
     val computeIndentationPatches = 
       // generate patches from old VS new
-      List(Patch.empty)
+      for ((tokens, line) <- docLines.zipWithIndex)
+      yield {
+        val oldIndent = oldIndentationByLine(line)
+        val newIndent = newIndentationByLine(line)
+        if (oldIndent != newIndent && tokens.exists(t => !isWhitespace(t))) {
+          Patch.removeTokens(tokens.takeWhile(isHSpace)) + Patch.addLeft(tokens.head, newIndent.asString)
+        } else {
+          Patch.empty
+        }
+      }
     
     computeIndentationPatches.asPatch + bracePatches.asPatch
     /*

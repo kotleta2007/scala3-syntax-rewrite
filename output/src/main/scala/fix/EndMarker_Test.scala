@@ -11,10 +11,8 @@ object EndMarker_Test:
 
   case class MyText(text: String):
     println(text)
-  end MyText
 
   extension (m: MyText)
     def myPrint = println(m.text)
-    end myPrint
-  end extension
+
 end EndMarker_Test

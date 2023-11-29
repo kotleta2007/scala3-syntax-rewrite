@@ -58,4 +58,10 @@ object IndentationSyntax_Test {
 
   object MyObject:
     override def toString(): String = "myObject"
+
+  if (true) {
+      if (true) {
+println("true")
+    }
+  }
 }

@@ -9,8 +9,8 @@ object IndentationSyntax_Test:
 
   if (true)
     println("a2")
-    println("b2")
-    println("c2")
+      println("b2")
+          println("c2")
   end if
 
   if (true)
@@ -23,37 +23,38 @@ object IndentationSyntax_Test:
     println("a")
     println("b")
     println("c")
-  end if
   
   while (true)
       println("a")
-      println("b")
-      println("c")
+            println("b")
+                        println("c")
   end while
 
   // spaces instead of tabs
   while (true)
     println("a")
-    println("b")
-    println("c")
+       println("b")
+     println("c")
   end while
 
   val xs = List(1, 2, 3)
-  end xs
   for (x <- xs)
       println("a")
-      println("b")
-      println("c")
+            println("b")
+                        println("c")
+  end for
 
   for (x <- xs) yield
     val myFactor = 2
-    end myFactor
-    myFactor * x
+                      myFactor * x
   end for
 
   object MyObject:
     override def toString(): String = "myObject"
-    end toString
-  end MyObject
 
+  if (true)
+      if (true)
+        println("true")
+      end if
+  end if
 end IndentationSyntax_Test
