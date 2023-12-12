@@ -1,9 +1,9 @@
 package p1.p2:
 /*
 rules = [
-  IndentationSyntax
+  AddEndMarkers
 ]
-IndentationSyntax.addEndMarkers = true
+AddEndMarkers.addEndMarkers = true
 */
   abstract class C():
 

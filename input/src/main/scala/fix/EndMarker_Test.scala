@@ -1,23 +1,24 @@
 package fix
 /*
 rules = [
-  IndentationSyntax
+  AddEndMarkers
 ]
-IndentationSyntax.addEndMarkers = true
+AddEndMarkers.addEndMarkers = true
 */
-object EndMarker_Test {
-  if (true) {
+object EndMarker_Test:
+  if true then
     println(true)
-  }
 
-  class MyNumber(number: Int) extends AnyRef {
+  class MyNumber(number: Int) extends AnyRef:
     println(number)
-  }
 
   case class MyText(text: String):
     println(text)
 
   extension (m: MyText)
     def myPrint = println(m.text)
+  
+  enum Color:
+    case Red, Green, Blue
 
-}
+package object A
