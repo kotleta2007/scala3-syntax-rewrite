@@ -64,4 +64,11 @@ object IndentationSyntax_Test {
 println("true")
     }
   }
+
+  val num = 2
+  val numRes = num match {
+    case 2 => "two"
+    case _ => "not two" 
+  }
+  
 }

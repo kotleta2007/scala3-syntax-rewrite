@@ -6,6 +6,7 @@ import metaconfig.Configured
 import scala.annotation.tailrec
 import scala.collection.mutable
 import com.google.protobuf.Empty
+import java.lang.Character.{MATH_SYMBOL, OTHER_SYMBOL}
 
 case class IndentationSyntaxParameters(
   addEndMarkers: Boolean,
@@ -20,15 +21,15 @@ case class IndentationSyntaxParameters(
 )
 
 object IndentationSyntaxParameters {
-  val default = IndentationSyntaxParameters(false, Nil, 0, "  ")
-  implicit val surface: metaconfig.generic.Surface[IndentationSyntaxParameters] = metaconfig.generic.deriveSurface[IndentationSyntaxParameters]
-  implicit val decoder: metaconfig.ConfDecoder[IndentationSyntaxParameters] = metaconfig.generic.deriveDecoder(default)
+  val default = AddEndMarkersParameters(false, Nil, 0, "  ")
+  implicit val surface: metaconfig.generic.Surface[AddEndMarkersParameters] = metaconfig.generic.deriveSurface[AddEndMarkersParameters]
+  implicit val decoder: metaconfig.ConfDecoder[AddEndMarkersParameters] = metaconfig.generic.deriveDecoder(default)
 }
 
-class IndentationSyntax(params: IndentationSyntaxParameters)
+class IndentationSyntax(params: AddEndMarkersParameters)
     extends SyntacticRule("IndentationSyntax") {
   
-  def this() = this(IndentationSyntaxParameters.default)
+  def this() = this(AddEndMarkersParameters.default)
 
   override def withConfiguration(config: Configuration): Configured[Rule] = 
     config.conf.getOrElse("IndentationSyntax")(this.params).map(newParams => new IndentationSyntax(newParams))
@@ -62,7 +63,7 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
     }
 
     def getEndMarker(tree: Tree): Option[String] = {
-      if (!params.addEndMarkers || endMarkerSkipped(tree)) {
+      if (!params.addEndMarkers || endMarkerSkipped(tree) || tree.isInstanceOf[Term.ArgClause]) {
         None
       } else {
         val endMarkerName = tree match {
@@ -286,14 +287,20 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
     def indentationByToken(t: Token) = newIndentationByLine(lineByToken(t))
 
     // TODO: think of something more clever
-    def isBraced(t: Tree) = t.tokens.exists(isLeftBrace) && t.tokens.exists(isRightBrace)
+    def isBraced(t: Tree) = t.tokens.nonEmpty && isLeftBrace(t.tokens.head) && isRightBrace(t.tokens.last)
+      // t.tokens.exists(isLeftBrace) && t.tokens.exists(isRightBrace)
     // pattern match
     // if it's a template, find the { before the "self" 
     // it it's a catch tree, find the first { after "catch" and before the first case (if "catch" exists)
     // if it's an "enums" list inside a for-expression, find the first { after the "for" and before the first enumerator
 
     val bracePatches = doc.tree.collect {
-      case templateOrBlock @ (_: Template | _: Term.Block) if isBraced(templateOrBlock) => {
+      case templateOrBlock @ (_: Template | _: Term.Block) 
+      if isBraced(templateOrBlock) 
+      && !templateOrBlock.parent.get.isInstanceOf[Term.ArgClause] 
+      && !templateOrBlock.tokens.forall(t => isWhitespace(t) || isLeftBrace(t) || isRightBrace(t))
+      => {
+        
 
         // don't remove braces on all blocks!
         // special cases:
@@ -310,9 +317,32 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
         val tokensBeforeLeftBrace = templateOrBlock.parent.get.tokens.takeWhile(isBeforeLeftBrace)
         val whitespaceBeforeLeftBrace = tokensBeforeLeftBrace.takeRightWhile(isWhitespace) 
 
+        def addBackticks = {
+          val operatorIdent = templateOrBlock.parent.get.tokens.findLast(t => isBeforeLeftBrace(t) && !isWhitespace(t)).get
+          def isIdent(t: Token) = t.isInstanceOf[scala.meta.tokens.Token.Ident]
+          def hasBackticks(t: Token) = t.text.last == '`' 
+
+          def isOperator(t: Token): Boolean = t.text.last match {
+            case '~' | '!' | '@' | '#' | '%' |
+              '^' | '*' | '+' | '-' | '<' |
+              '>' | '?' | ':' | '=' | '&' |
+              '|' | '/' | '\\' => true
+            case c => isSpecial(c)
+          }
+          def isSpecial(c: Char): Boolean = {
+            val chtp = Character.getType(c)
+            chtp == MATH_SYMBOL.toInt || chtp == OTHER_SYMBOL.toInt
+          }
+          if (isIdent(operatorIdent) && !hasBackticks(operatorIdent) && isOperator(operatorIdent)) {
+            Patch.addAround(operatorIdent, "`", "`")
+          } else {
+            Patch.empty
+          }
+        }
+
         val removeWhitespaceBeforeLeftBrace = Patch.removeTokens(whitespaceBeforeLeftBrace)
         val removeLeftBrace = templateOrBlock match {
-          case _: Template   => Patch.replaceToken(leftBrace, ":")
+          case _: Template   => Patch.replaceToken(leftBrace, ":") + addBackticks
           case _: Term.Block => Patch.removeToken(leftBrace)
           case _             => throw new Exception("The given tree is not a template body or a block.")
         }       
@@ -353,8 +383,112 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
         
         removeWhitespaceBeforeLeftBrace + removeLeftBrace + removeRightBrace
       }
-      case _: Term.Match => Patch.empty // x match { } find the braces
-      case _: Term.Try => Patch.empty // look for {} after "catch" and before "finally" if it exists. Everything else is a block.
+      // x match { } find the braces
+      case matchTree: Term.Match => {
+        val leftBrace = matchTree.parent.get.tokens.find(isLeftBrace).get
+        val rightBrace = matchTree.parent.get.tokens.findLast(isRightBrace).get
+
+        def isBeforeLeftBrace(t: Token) = t.end <= leftBrace.start
+        def isAfterLeftBrace(t: Token) = t.start >= leftBrace.end
+        
+        def isBeforeRightBrace(t: Token) = t.end <= rightBrace.start
+        
+        val tokensBeforeLeftBrace = matchTree.parent.get.tokens.takeWhile(isBeforeLeftBrace)
+        val whitespaceBeforeLeftBrace = tokensBeforeLeftBrace.takeRightWhile(isWhitespace) 
+
+        val removeWhitespaceBeforeLeftBrace = Patch.removeTokens(whitespaceBeforeLeftBrace)
+
+        val removeLeftBrace = Patch.removeToken(leftBrace)
+
+        val removeRightBrace = getEndMarker(matchTree) match {
+          case Some(endMarker) => Patch.replaceToken(rightBrace, endMarker)
+          case None =>
+
+            val tokensBeforeRightBrace = matchTree.parent.get.tokens.takeWhile(isBeforeRightBrace)
+            val whitespaceBeforeRightBrace = tokensBeforeRightBrace.takeRightWhile(isHSpace)
+            Patch.removeTokens(whitespaceBeforeRightBrace :+ rightBrace)
+        }
+
+
+        // mutate newIndentationByLine
+        val firstToken = matchTree.tokens.find(t => isAfterLeftBrace(t) && !isWhitespace(t)).get
+        val lastToken  = matchTree.tokens.findLast(t => isBeforeRightBrace(t) && !isWhitespace(t)).get
+
+        val parentIndentation = indentationByToken(matchTree.parent.get.tokens.head)
+        val insideIndentation = indentationByToken(firstToken)
+        
+        val correctIndentation = if (insideIndentation > parentIndentation) {
+          insideIndentation
+        } else {
+          parentIndentation + defaultIndentation
+        }
+
+        for (line <- lineByToken(firstToken).to(lineByToken(lastToken))) {
+          if (newIndentationByLine(line) < correctIndentation) {
+            newIndentationByLine(line) = correctIndentation
+          }
+        }
+
+        val rightBraceLine = lineByToken(rightBrace)
+        if (newIndentationByLine(rightBraceLine) != parentIndentation) {
+          newIndentationByLine(rightBraceLine) = parentIndentation
+        }
+        
+        removeWhitespaceBeforeLeftBrace + removeLeftBrace + removeRightBrace
+      }
+      // look for {} after "catch" and before "finally" if it exists. Everything else is a block.
+      case tryTree: Term.Try => {
+        val leftBrace = tryTree.parent.get.tokens.find(isLeftBrace).get
+        val rightBrace = tryTree.parent.get.tokens.findLast(isRightBrace).get
+
+        def isBeforeLeftBrace(t: Token) = t.end <= leftBrace.start
+        def isAfterLeftBrace(t: Token) = t.start >= leftBrace.end
+        
+        def isBeforeRightBrace(t: Token) = t.end <= rightBrace.start
+        
+        val tokensBeforeLeftBrace = tryTree.parent.get.tokens.takeWhile(isBeforeLeftBrace)
+        val whitespaceBeforeLeftBrace = tokensBeforeLeftBrace.takeRightWhile(isWhitespace) 
+
+        val removeWhitespaceBeforeLeftBrace = Patch.removeTokens(whitespaceBeforeLeftBrace)
+
+        val removeLeftBrace = Patch.removeToken(leftBrace)
+
+        val removeRightBrace = getEndMarker(tryTree) match {
+          case Some(endMarker) => Patch.replaceToken(rightBrace, endMarker)
+          case None =>
+
+            val tokensBeforeRightBrace = tryTree.parent.get.tokens.takeWhile(isBeforeRightBrace)
+            val whitespaceBeforeRightBrace = tokensBeforeRightBrace.takeRightWhile(isHSpace)
+            Patch.removeTokens(whitespaceBeforeRightBrace :+ rightBrace)
+        }
+
+
+        // mutate newIndentationByLine
+        val firstToken = tryTree.tokens.find(t => isAfterLeftBrace(t) && !isWhitespace(t)).get
+        val lastToken  = tryTree.tokens.findLast(t => isBeforeRightBrace(t) && !isWhitespace(t)).get
+
+        val parentIndentation = indentationByToken(tryTree.parent.get.tokens.head)
+        val insideIndentation = indentationByToken(firstToken)
+        
+        val correctIndentation = if (insideIndentation > parentIndentation) {
+          insideIndentation
+        } else {
+          parentIndentation + defaultIndentation
+        }
+
+        for (line <- lineByToken(firstToken).to(lineByToken(lastToken))) {
+          if (newIndentationByLine(line) < correctIndentation) {
+            newIndentationByLine(line) = correctIndentation
+          }
+        }
+
+        val rightBraceLine = lineByToken(rightBrace)
+        if (newIndentationByLine(rightBraceLine) != parentIndentation) {
+          newIndentationByLine(rightBraceLine) = parentIndentation
+        }
+        
+        removeWhitespaceBeforeLeftBrace + removeLeftBrace + removeRightBrace
+      }
       case _ => Patch.empty
     }
 
@@ -407,13 +541,4 @@ class IndentationSyntax(params: IndentationSyntaxParameters)
   /*
    * END OF HELPER FUNCTIONS (TOKEN PREDICATES)
    */
-
-  /* a note regarding templates and package objects
-
-  A template defines the type signature, behavior and initial state of a trait or class of objects or of a single object. 
-  https://www.scala-lang.org/files/archive/spec/3.4/05-classes-and-objects.html#templates
-
-  Also, package objects in Scalameta:
-  https://scalameta.org/docs/trees/quasiquotes.html
-  */
 }

@@ -3,6 +3,14 @@ package fix
 import scalafix.testkit.AbstractSemanticRuleSuite
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scalafix.testkit.AbstractSyntacticRuleSuite
+import scalafix.testkit.RuleTest
+import scalafix.internal.patch.PatchInternals
+import scalafix.testkit.SemanticRuleSuite
+import scala.meta.io.AbsolutePath
+import java.io.File
+import java.io.BufferedWriter
+import java.io.FileWriter
+import scala.meta.XtensionTokenizeInputLike
 
 class RuleSuite extends AbstractSemanticRuleSuite with AnyFunSuiteLike {
   // Doesn't really work; bugs with Scalameta
@@ -28,5 +36,53 @@ class RuleSuite extends AbstractSemanticRuleSuite with AnyFunSuiteLike {
     }
   }
   */
-  runAllTests()
+
+  // val (passing, failing) = testsToRun.partition(!_.path.testName.contains("_fails"))
+  // passing.foreach(runOn)
+  // runSpecificTests("Cats5")
+  writeTestResult("ReferenceTest")
+
+//  writeTestResult("implicits/")
+//  writeTestResult("types/")
+  //   for running only one test if using Intellij
+  def runSpecificTests(name: String): Unit =
+    filterRuleTest(name).map(runOn)
+
+  //   for overwriting a result test in output directory
+  def writeTestResult(name: String): Unit =
+    filterRuleTest(name).map(runAndWriteResult)
+
+  private def filterRuleTest(name: String): List[RuleTest] = {
+    testsToRun.foreach(t => println(t.path.testName))
+    testsToRun.filter(_.path.testName.toLowerCase.contains(name.toLowerCase()))
+  }
+
+  // Write the result directly to output folder, to avoid fixing by hand the diff
+  private def runAndWriteResult(ruleTest: RuleTest): Unit = {
+    val (rule, sdoc) = ruleTest.run.apply()
+    rule.beforeStart()
+    val res =
+      try rule.semanticPatch(sdoc, suppress = false)
+      finally rule.afterComplete()
+    // verify to verify that tokenPatchApply and fixed are the same
+    val fixed =
+      PatchInternals.tokenPatchApply(res.ruleCtx, res.semanticdbIndex, res.patches)
+    val tokens        = fixed.tokenize.get
+    val _ :: obtained = SemanticRuleSuite.stripTestkitComments(tokens).linesIterator.toList
+    ruleTest.path.resolveOutput(props) match {
+      case Right(file) => writeFile(file, obtained.mkString("\n"))
+      case Left(err)   => throw new Exception(s"File not found $err")
+    }
+  }
+
+  private def writeFile(path: AbsolutePath, s: String): Unit = {
+    val filename = path.toNIO.getFileName.toString
+    val parent   = path.toNIO.getParent.toString
+    val file     = new File(parent, filename)
+    val bw       = new BufferedWriter(new FileWriter(file))
+    bw.write(s)
+    bw.close()
+  }
+
+  // runAllTests()
 }
